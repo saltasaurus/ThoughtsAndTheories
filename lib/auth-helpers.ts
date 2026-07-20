@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/lib/errors";
 import { getViewer, type Viewer } from "@/lib/visibility";
 
@@ -11,7 +12,15 @@ export async function requireUser(): Promise<SessionUser> {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) redirect("/login");
-  return { id, name: session.user.name ?? "", email: session.user.email ?? "" };
+  // A JWT can outlive its user (a purged account, or a dev DB reset). Verify the
+  // row still exists so a ghost session bounces to /login instead of failing a
+  // foreign-key check deep inside a mutation. /login re-issues a fresh cookie.
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, email: true },
+  });
+  if (!user) redirect("/login");
+  return { id: user.id, name: user.name ?? "", email: user.email ?? "" };
 }
 
 export const PEEK_COOKIE = "spoiler-peek";
