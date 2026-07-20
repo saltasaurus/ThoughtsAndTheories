@@ -1,32 +1,34 @@
-import { getRequestViewer } from "@/lib/auth-helpers";
+import { GraphView } from "@/components/graph/graph-view";
 import { Panel } from "@/components/ui/card";
+import { getRequestViewer } from "@/lib/auth-helpers";
+import { graphData } from "@/lib/visibility";
 
-/**
- * TODO (Phase 2): knowledge graph view — Cytoscape + fcose layout, weight →
- * edge thickness, card type → node color, degree-based sizing, type filter,
- * node cap with notice, click node → card detail panel.
- *
- * The gated data core already exists and is tested: lib/visibility.ts
- * graphData() omits gated cards entirely (no phantom nodes — position and
- * adjacency leak structure).
- */
 export default async function GraphPage({
   params,
 }: {
   params: Promise<{ seriesId: string }>;
 }) {
   const { seriesId } = await params;
-  await getRequestViewer(seriesId); // membership check
+  const viewer = await getRequestViewer(seriesId);
+  const { nodes, edges, truncated } = await graphData(viewer);
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="mb-3 text-2xl">Knowledge graph</h1>
-      <Panel>
-        <p className="text-sm text-soft">
-          The interactive graph (Cytoscape, fcose layout) ships in Phase 2. Its server-side data
-          endpoint is already built and spoiler-gated — gated cards are omitted entirely, never
-          rendered as placeholder nodes.
-        </p>
-      </Panel>
+    <div>
+      <h1 className="mb-1 text-2xl">Knowledge graph</h1>
+      <p className="mb-3 text-xs text-soft">
+        Cards you&apos;ve reached and their relations. Click a node for its connections; toggle
+        types to filter. Everything here is already server-side gated.
+      </p>
+      {nodes.length === 0 ? (
+        <Panel>
+          <p className="text-sm text-soft">
+            No cards are visible at your current reading position yet — advance your progress or add
+            cards to populate the graph.
+          </p>
+        </Panel>
+      ) : (
+        <GraphView nodes={nodes} edges={edges} truncated={truncated} seriesId={seriesId} />
+      )}
     </div>
   );
 }
