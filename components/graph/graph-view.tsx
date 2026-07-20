@@ -26,17 +26,53 @@ export type GraphEdge = {
   directed: boolean;
 };
 
-/** Reads the theme's card-type color from CSS vars so nodes track dark/light. */
-function typeColor(type: string): string {
-  if (typeof window === "undefined") return "#888";
-  const v = getComputedStyle(document.documentElement)
-    .getPropertyValue(`--color-${type.toLowerCase()}`)
-    .trim();
-  return v || "#888";
+// OKLCH -> sRGB (Björn Ottosson's formulas, https://bottosson.github.io/posts/oklab/).
+// Cytoscape's style engine only understands hex/rgb/hsl, but our theme is oklch().
+function oklchToRgb(l: number, c: number, h: number): string {
+  const hRad = (h * Math.PI) / 180;
+  const a = c * Math.cos(hRad);
+  const b = c * Math.sin(hRad);
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = l - 0.0894841775 * a - 1.291485548 * b;
+  const [l3, m3, s3] = [l_ ** 3, m_ ** 3, s_ ** 3];
+  const lin = [
+    4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+    -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+    -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3,
+  ];
+  const toSrgb = (x: number) => {
+    const clamped = Math.min(1, Math.max(0, x));
+    return clamped <= 0.0031308
+      ? 12.92 * clamped
+      : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+  };
+  const [r, g, bl] = lin.map((x) => Math.round(toSrgb(x) * 255));
+  return `rgb(${r}, ${g}, ${bl})`;
 }
-function cssVar(name: string): string {
+
+// Reads a Tailwind color utility's resolved oklch() value and converts it to rgb()
+// so Cytoscape can parse it, since a theme-token's --color-* CSS var isn't always
+// emitted at :root (Tailwind inlines unreferenced ones straight into utility classes).
+const colorCache = new Map<string, string>();
+function resolvedColor(className: string): string {
   if (typeof window === "undefined") return "#888";
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
+  const cached = colorCache.get(className);
+  if (cached) return cached;
+  const el = document.createElement("span");
+  el.className = className;
+  el.style.display = "none";
+  document.body.appendChild(el);
+  const raw = getComputedStyle(el).color;
+  document.body.removeChild(el);
+  const match = raw.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+  const rgb = match ? oklchToRgb(Number(match[1]), Number(match[2]), Number(match[3])) : raw || "#888";
+  colorCache.set(className, rgb);
+  return rgb;
+}
+/** Reads the theme's card-type color so nodes track dark/light. */
+function typeColor(type: string): string {
+  return resolvedColor(`text-${type.toLowerCase()}`);
 }
 
 export function GraphView({
@@ -107,11 +143,11 @@ export function GraphView({
             "background-color": (ele: cytoscape.NodeSingular) => typeColor(ele.data("type")),
             // a canvas-colored ring gives touching nodes a visible moat
             "border-width": 2,
-            "border-color": cssVar("--canvas"),
+            "border-color": resolvedColor("text-canvas"),
             // isolated nodes recede so the connected structure reads clearly
             opacity: (ele: cytoscape.NodeSingular) => (ele.data("deg") === 0 ? 0.45 : 1),
             label: "data(title)",
-            color: cssVar("--color-ink"),
+            color: resolvedColor("text-ink"),
             "font-size": 11,
             "font-weight": 600,
             "text-valign": "bottom",
@@ -120,7 +156,7 @@ export function GraphView({
             "text-wrap": "ellipsis",
             "text-max-width": "116px",
             // chip behind the label keeps it readable over edges and neighbours
-            "text-background-color": cssVar("--canvas"),
+            "text-background-color": resolvedColor("text-canvas"),
             "text-background-opacity": 0.8,
             "text-background-shape": "roundrectangle",
             "text-background-padding": "3px",
@@ -137,11 +173,11 @@ export function GraphView({
           style: {
             // weight (0..1) → thickness
             width: (ele: cytoscape.EdgeSingular) => 1.2 + ele.data("weight") * 7,
-            "line-color": cssVar("--color-soft"),
+            "line-color": resolvedColor("text-soft"),
             "curve-style": "bezier",
             "target-arrow-shape": (ele: cytoscape.EdgeSingular) =>
               ele.data("directed") ? "triangle" : "none",
-            "target-arrow-color": cssVar("--color-soft"),
+            "target-arrow-color": resolvedColor("text-soft"),
             "arrow-scale": 0.9,
             opacity: 0.5,
           },
@@ -150,7 +186,7 @@ export function GraphView({
           selector: "node:selected",
           style: {
             "border-width": 3,
-            "border-color": cssVar("--color-accent"),
+            "border-color": resolvedColor("text-accent"),
             opacity: 1,
           },
         },

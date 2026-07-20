@@ -1,4 +1,4 @@
-import { GraphView } from "@/components/graph/graph-view";
+import { GraphView } from "@/components/graph/graph-view-client";
 import { Panel } from "@/components/ui/card";
 import { getRequestViewer } from "@/lib/auth-helpers";
 import { graphData } from "@/lib/visibility";
