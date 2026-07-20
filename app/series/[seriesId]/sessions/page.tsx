@@ -1,0 +1,172 @@
+import { Trash2 } from "lucide-react";
+import {
+  createSessionAction,
+  deleteSessionAction,
+  setSessionStatusAction,
+} from "@/app/actions/sessions";
+import { SectionSelect } from "@/components/cards/section-select";
+import { ErrorNote } from "@/components/error-note";
+import { RichTextEditor } from "@/components/rich-text-editor";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { getRequestViewer } from "@/lib/auth-helpers";
+import { listMembers } from "@/lib/services/memberships";
+import { listSessions, listSectionOptions } from "@/lib/visibility";
+import { TiptapContent } from "@/lib/tiptap-render";
+
+const STATE_LABEL = { behind: "behind", at_goal: "at goal", ahead: "ahead" } as const;
+const STATE_CLASS = {
+  behind: "bg-character/20 text-character",
+  at_goal: "bg-location/20 text-location",
+  ahead: "bg-event/20 text-event",
+} as const;
+
+export default async function SessionsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ seriesId: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { seriesId } = await params;
+  const { error } = await searchParams;
+  const viewer = await getRequestViewer(seriesId);
+  const [sessions, members, options] = await Promise.all([
+    listSessions(viewer),
+    listMembers(viewer),
+    listSectionOptions(viewer),
+  ]);
+  const isEditor = viewer.role !== "READER";
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <h1 className="mb-3 text-2xl">Sessions</h1>
+      <ErrorNote error={error} />
+
+      <div className="mb-4 space-y-3">
+        {sessions.length === 0 && <p className="text-sm text-soft">No sessions yet.</p>}
+        {sessions.map((s) => (
+          <Panel key={s.id}>
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <h2 className="text-lg">{s.title}</h2>
+              <Badge
+                className={
+                  s.status === "ACTIVE"
+                    ? "border-location/50 text-location"
+                    : s.status === "COMPLETED"
+                      ? "border-line text-soft"
+                      : "border-event/50 text-event"
+                }
+              >
+                {s.status.toLowerCase()}
+              </Badge>
+              {isEditor && (
+                <div className="ml-auto flex gap-1.5">
+                  {s.status !== "ACTIVE" && (
+                    <form action={setSessionStatusAction}>
+                      <input type="hidden" name="seriesId" value={seriesId} />
+                      <input type="hidden" name="sessionId" value={s.id} />
+                      <input type="hidden" name="status" value="ACTIVE" />
+                      <Button variant="outline" size="sm">Make active</Button>
+                    </form>
+                  )}
+                  {s.status === "ACTIVE" && (
+                    <form action={setSessionStatusAction}>
+                      <input type="hidden" name="seriesId" value={seriesId} />
+                      <input type="hidden" name="sessionId" value={s.id} />
+                      <input type="hidden" name="status" value="COMPLETED" />
+                      <Button variant="outline" size="sm">Complete</Button>
+                    </form>
+                  )}
+                  <form action={deleteSessionAction}>
+                    <input type="hidden" name="seriesId" value={seriesId} />
+                    <input type="hidden" name="sessionId" value={s.id} />
+                    <Button variant="ghost" size="sm" title="Delete session">
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </form>
+                </div>
+              )}
+            </div>
+            <p className="mb-1 text-sm">
+              <span className="text-soft">Goal: </span>
+              <span className="tnum">
+                {s.goalSection.label}
+                {s.goalSection.title ? ` — ${s.goalSection.title}` : ""}
+              </span>
+            </p>
+            {s.scheduledAt && (
+              <p className="mb-1 text-xs text-soft">Scheduled {s.scheduledAt.toLocaleString()}</p>
+            )}
+            {s.notes !== null && s.notes !== undefined && <TiptapContent doc={s.notes} />}
+          </Panel>
+        ))}
+      </div>
+
+      <Panel className="mb-4">
+        <h2 className="mb-2 text-lg">Roster</h2>
+        <ul className="space-y-1">
+          {members.map((m) => (
+            <li key={m.userId} className="flex items-center gap-2 text-sm">
+              <span>{m.name}</span>
+              <span className="text-[11px] uppercase text-soft">{m.role.toLowerCase()}</span>
+              {m.state && (
+                <span className={`rounded-full px-2 py-0.5 text-[11px] ${STATE_CLASS[m.state]}`}>
+                  {STATE_LABEL[m.state]}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-[11px] text-soft">
+          States compare each member to the active session goal. Exact positions are never shown —
+          that&apos;s each reader&apos;s business.
+        </p>
+      </Panel>
+
+      {isEditor && (
+        <Panel>
+          <h2 className="mb-3 text-lg">New session</h2>
+          <form action={createSessionAction} className="grid gap-2 sm:grid-cols-2">
+            <input type="hidden" name="seriesId" value={seriesId} />
+            <div>
+              <Label>Title</Label>
+              <Input name="title" required maxLength={200} />
+            </div>
+            <div>
+              <Label>Scheduled at</Label>
+              <Input name="scheduledAt" type="datetime-local" />
+            </div>
+            <div>
+              <Label>Goal section (never gated — labels only)</Label>
+              <SectionSelect name="goalSectionId" options={options} required />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select name="status" defaultValue="UPCOMING">
+                <option value="UPCOMING">Upcoming</option>
+                <option value="ACTIVE">Active</option>
+                <option value="COMPLETED">Completed</option>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Notes</Label>
+              <p className="mb-1 text-[11px] text-danger">
+                Notes are free text and visible to ALL members regardless of their progress — the
+                system cannot gate what you write here. Mind spoilers.
+              </p>
+              <RichTextEditor name="notes" />
+            </div>
+            <div className="sm:col-span-2">
+              <Button type="submit">Create session</Button>
+            </div>
+          </form>
+        </Panel>
+      )}
+    </div>
+  );
+}

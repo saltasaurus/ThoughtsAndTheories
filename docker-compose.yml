@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    profiles: ["dev", "prod"]
+    environment:
+      POSTGRES_USER: theorytracker
+      POSTGRES_PASSWORD: theorytracker
+      POSTGRES_DB: theorytracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U theorytracker"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    profiles: ["prod"]
+    build:
+      context: .
+      target: build
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://theorytracker:theorytracker@db:5432/theorytracker
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    profiles: ["prod"]
+    build:
+      context: .
+      target: runner
+    environment:
+      DATABASE_URL: postgresql://theorytracker:theorytracker@db:5432/theorytracker
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: https://${DOMAIN}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    profiles: ["prod"]
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddydata:

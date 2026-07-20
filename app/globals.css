@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* Dark is the default theme; light is honored via prefers-color-scheme. */
+:root {
+  --canvas: oklch(0.18 0.015 270);
+  --surface: oklch(0.22 0.018 270);
+  --raised: oklch(0.26 0.02 270);
+  --ink: oklch(0.93 0.01 90);
+  --soft: oklch(0.68 0.02 270);
+  --line: oklch(0.32 0.02 270);
+  --accent: oklch(0.78 0.13 85); /* warm lamplight gold */
+  --danger: oklch(0.62 0.19 25);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --canvas: oklch(0.97 0.008 90);
+    --surface: oklch(1 0 0);
+    --raised: oklch(0.94 0.01 90);
+    --ink: oklch(0.25 0.02 270);
+    --soft: oklch(0.5 0.02 270);
+    --line: oklch(0.87 0.01 270);
+    --accent: oklch(0.55 0.13 85);
+    --danger: oklch(0.55 0.19 25);
+  }
+}
+
+@theme inline {
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-soft: var(--soft);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+
+  /* Card type palette — considered, not Tailwind defaults. */
+  --color-character: oklch(0.76 0.11 60); /* ember */
+  --color-location: oklch(0.74 0.1 155); /* moss */
+  --color-event: oklch(0.73 0.1 235); /* dusk blue */
+  --color-item: oklch(0.74 0.1 300); /* heather */
+  --color-faction: oklch(0.68 0.13 20); /* oxblood */
+  --color-concept: oklch(0.76 0.09 195); /* glacier */
+  --color-theory: oklch(0.72 0.13 330); /* orchid */
+}
+
+body {
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
+/* Indices, positions, counts — tabular figures per spec. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.tiptap:focus {
+  outline: none;
+}

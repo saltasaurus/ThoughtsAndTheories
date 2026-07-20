@@ -1,0 +1,403 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  EDITOR
+  READER
+}
+
+// Invites can never grant OWNER — enforced at the type level, not in app code.
+enum InviteRole {
+  EDITOR
+  READER
+}
+
+enum SectionType {
+  PROLOGUE
+  PRELUDE
+  CHAPTER
+  INTERLUDE
+  EPILOGUE
+  END_NOTES
+  APPENDIX
+  OTHER
+}
+
+enum CardType {
+  CHARACTER
+  LOCATION
+  EVENT
+  ITEM
+  FACTION
+  CONCEPT
+  THEORY
+}
+
+enum FieldType {
+  TEXT
+  RICHTEXT
+  NUMBER
+  INWORLD_DATE
+  SELECT
+  MULTISELECT
+  CARD_REF
+  IMAGE_URL
+}
+
+// CARD: new field values default to their card's reveal point.
+// SERIES_START: new field values are visible whenever the card is.
+enum DefaultRevealBehavior {
+  CARD
+  SERIES_START
+}
+
+enum DatePrecision {
+  YEAR
+  MONTH
+  DAY
+  UNKNOWN
+}
+
+enum SessionStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+enum RevisionEntityType {
+  CARD
+  CARD_FIELD
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  memberships     Membership[]
+  createdCards    Card[]        @relation("CardCreator")
+  createdInvites  Invite[]      @relation("InviteCreator")
+  createdSessions ClubSession[] @relation("SessionCreator")
+  revisions       Revision[]
+}
+
+model Series {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  books           Book[]
+  memberships     Membership[]
+  cards           Card[]
+  templates       Template[]
+  calendars       Calendar[]
+  timelineEntries TimelineEntry[]
+  sessions        ClubSession[]
+  invites         Invite[]
+}
+
+model Book {
+  id        String    @id @default(cuid())
+  seriesId  String
+  title     String // book titles are series structure — never gated
+  order     Int
+  deletedAt DateTime?
+
+  series   Series    @relation(fields: [seriesId], references: [id])
+  parts    Part[]
+  sections Section[]
+
+  @@index([seriesId])
+}
+
+model Part {
+  id        String    @id @default(cuid())
+  bookId    String
+  number    Int
+  title     String? // GATED — part titles can spoil
+  order     Int
+  deletedAt DateTime?
+
+  book     Book      @relation(fields: [bookId], references: [id])
+  sections Section[]
+
+  @@index([bookId])
+}
+
+model Section {
+  id        String      @id @default(cuid())
+  bookId    String
+  partId    String? // null for sections outside any Part (prologues, interludes between Parts…)
+  type      SectionType
+  number    Int? // per-type sequence within the Series; null for one-off types
+  title     String? // GATED — section titles can spoil
+  position  Int // dense, gapless, series-global; THE ordering & gate axis
+  deletedAt DateTime?
+
+  book Book  @relation(fields: [bookId], references: [id])
+  part Part? @relation(fields: [partId], references: [id])
+
+  // Everything that reveals here. All Restrict: a Section referenced as a
+  // reveal point cannot be deleted until content is reassigned.
+  revealedCards     Card[]          @relation("CardRevealSection")
+  revealedFields    CardField[]     @relation("CardFieldRevealSection")
+  revealedRelations CardRelation[]  @relation("RelationRevealSection")
+  revealedTimeline  TimelineEntry[] @relation("TimelineRevealSection")
+  memberPositions   Membership[]    @relation("MembershipCurrentSection")
+  sessionGoals      ClubSession[]   @relation("SessionGoalSection")
+
+  @@index([bookId, position])
+}
+
+model Membership {
+  id               String   @id @default(cuid())
+  userId           String
+  seriesId         String
+  role             Role
+  currentSectionId String? // null = series start, before any section
+  revealIndex      Int      @default(0) // cached from currentSection.position; 0 = start
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User    @relation(fields: [userId], references: [id])
+  series         Series  @relation(fields: [seriesId], references: [id])
+  currentSection Section? @relation("MembershipCurrentSection", fields: [currentSectionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, seriesId])
+  @@index([seriesId])
+}
+
+model Card {
+  id              String    @id @default(cuid())
+  seriesId        String
+  type            CardType
+  title           String
+  summary         String?
+  confidence      Int? // THEORY only, 1–5
+  revealSectionId String
+  revealIndex     Int // cached from revealSection.position
+  createdById     String // attribution only — grants no permission
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  series        Series          @relation(fields: [seriesId], references: [id])
+  revealSection Section         @relation("CardRevealSection", fields: [revealSectionId], references: [id], onDelete: Restrict)
+  createdBy     User            @relation("CardCreator", fields: [createdById], references: [id])
+  fields        CardField[]
+  relationsFrom CardRelation[]  @relation("RelationFrom")
+  relationsTo   CardRelation[]  @relation("RelationTo")
+  timeline      TimelineEntry[]
+
+  @@index([seriesId, revealIndex])
+  @@index([seriesId, type])
+}
+
+model CardField {
+  id              String    @id @default(cuid())
+  cardId          String
+  templateFieldId String
+  value           Json
+  revealSectionId String
+  revealIndex     Int
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  card          Card          @relation(fields: [cardId], references: [id])
+  templateField TemplateField @relation(fields: [templateFieldId], references: [id])
+  revealSection Section       @relation("CardFieldRevealSection", fields: [revealSectionId], references: [id], onDelete: Restrict)
+
+  @@index([cardId, revealIndex])
+}
+
+// The spec's "Relation" entity; named CardRelation to avoid clashing with
+// TypeScript's DOM `Relation` type in app code.
+model CardRelation {
+  id              String    @id @default(cuid())
+  fromCardId      String
+  toCardId        String
+  type            String // free-text label: "sibling of", "betrays"…
+  weight          Float     @default(0.5) // 0–1, drives graph layout
+  directed        Boolean   @default(false)
+  notes           String?
+  revealSectionId String
+  revealIndex     Int
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  fromCard      Card    @relation("RelationFrom", fields: [fromCardId], references: [id])
+  toCard        Card    @relation("RelationTo", fields: [toCardId], references: [id])
+  revealSection Section @relation("RelationRevealSection", fields: [revealSectionId], references: [id], onDelete: Restrict)
+
+  @@index([fromCardId])
+  @@index([toCardId])
+}
+
+// Append-only. Diffs contain gated values — every read is gated by revealIndex.
+model Revision {
+  id          String             @id @default(cuid())
+  entityType  RevisionEntityType
+  entityId    String
+  userId      String
+  diff        Json
+  revealIndex Int // snapshot of the entity's effective revealIndex at write time
+  createdAt   DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+}
+
+model Template {
+  id       String   @id @default(cuid())
+  seriesId String
+  cardType CardType
+
+  series Series          @relation(fields: [seriesId], references: [id])
+  fields TemplateField[]
+
+  @@unique([seriesId, cardType])
+}
+
+model TemplateField {
+  id                    String                @id @default(cuid())
+  templateId            String
+  key                   String
+  label                 String
+  fieldType             FieldType
+  options               Json?
+  required              Boolean               @default(false)
+  order                 Int
+  defaultRevealBehavior DefaultRevealBehavior @default(CARD)
+  deletedAt             DateTime?
+
+  template   Template    @relation(fields: [templateId], references: [id])
+  cardFields CardField[]
+
+  @@index([templateId])
+}
+
+model Calendar {
+  id           String  @id @default(cuid())
+  seriesId     String
+  name         String
+  epochLabel   String?
+  daysPerWeek  Int
+  weekdayNames Json // string[]
+
+  series Series          @relation(fields: [seriesId], references: [id])
+  eras   CalendarEra[]
+  months CalendarMonth[]
+
+  @@index([seriesId])
+}
+
+model CalendarEra {
+  id           String @id @default(cuid())
+  calendarId   String
+  name         String
+  order        Int
+  yearOffset   Int // maps era-year → absolute year
+  abbreviation String
+
+  calendar Calendar        @relation(fields: [calendarId], references: [id])
+  timeline TimelineEntry[]
+
+  @@index([calendarId])
+}
+
+model CalendarMonth {
+  id         String @id @default(cuid())
+  calendarId String
+  name       String
+  order      Int
+  dayCount   Int
+
+  calendar Calendar @relation(fields: [calendarId], references: [id])
+
+  @@index([calendarId])
+}
+
+model TimelineEntry {
+  id              String        @id @default(cuid())
+  seriesId        String
+  cardId          String?
+  label           String
+  description     String?
+  revealSectionId String
+  revealIndex     Int // narrative time: when the reader learns it
+  // Embedded InWorldDate — in-world time: when it happened
+  eraId           String?
+  year            Int?
+  monthOrder      Int?
+  day             Int?
+  precision       DatePrecision
+  displayOverride String?
+  absoluteSortKey BigInt? // computed+persisted; null when precision is UNKNOWN
+  manualSortKey   Int? // ordering for UNKNOWN-precision entries
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  series        Series       @relation(fields: [seriesId], references: [id])
+  card          Card?        @relation(fields: [cardId], references: [id])
+  revealSection Section      @relation("TimelineRevealSection", fields: [revealSectionId], references: [id], onDelete: Restrict)
+  era           CalendarEra? @relation(fields: [eraId], references: [id])
+
+  @@index([seriesId, revealIndex])
+  @@index([seriesId, absoluteSortKey])
+}
+
+// Book-club meeting. Named ClubSession to avoid colliding with the Auth.js session.
+model ClubSession {
+  id              String        @id @default(cuid())
+  seriesId        String
+  title           String
+  scheduledAt     DateTime?
+  goalSectionId   String
+  goalRevealIndex Int // cached from goalSection.position — never gated
+  notes           Json? // Tiptap JSON; NOT gated (free text) — author is warned in UI
+  createdById     String
+  status          SessionStatus @default(UPCOMING)
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  series      Series  @relation(fields: [seriesId], references: [id])
+  goalSection Section @relation("SessionGoalSection", fields: [goalSectionId], references: [id], onDelete: Restrict)
+  createdBy   User    @relation("SessionCreator", fields: [createdById], references: [id])
+
+  // At most one ACTIVE session per series — raw-SQL partial unique index in migration.
+  @@index([seriesId, status])
+}
+
+model Invite {
+  id          String     @id @default(cuid())
+  seriesId    String
+  code        String     @unique
+  role        InviteRole
+  createdById String
+  expiresAt   DateTime?
+  maxUses     Int?
+  useCount    Int        @default(0)
+  revokedAt   DateTime?
+  createdAt   DateTime   @default(now())
+
+  series    Series @relation(fields: [seriesId], references: [id])
+  createdBy User   @relation("InviteCreator", fields: [createdById], references: [id])
+
+  @@index([seriesId])
+}
