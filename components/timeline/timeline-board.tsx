@@ -7,10 +7,11 @@ import { useMemo, useState } from "react";
  * Custom in-world time axis. vis-timeline models the axis as real JS Dates and
  * cannot accept a plain integer/bigint axis; per SPEC we build our own rather
  * than coerce fictional dates into real Date objects. Entries are positioned by
- * absoluteSortKey (in-world time). The reveal clamp is enforced server-side —
- * entries beyond progress are simply absent — so the "your progress" boundary
- * and the session goal are rendered as legend/state indicators, NOT axis
- * positions (narrative time and in-world time do not share a scale).
+ * absoluteSortKey (in-world time) on a horizontally scrollable canvas. The
+ * reveal clamp is enforced server-side — entries beyond progress are simply
+ * absent — so the "your progress" boundary and the session goal are rendered as
+ * legend/state indicators, NOT axis positions (narrative time and in-world time
+ * do not share a scale).
  */
 export type BoardEntry = {
   id: string;
@@ -20,8 +21,11 @@ export type BoardEntry = {
   sortKey: string; // bigint serialized
 };
 
-const MIN_GAP = 9; // percent — lane-stacking threshold
-const LANE_H = 44; // px
+const PAD = 28; // px inset at both ends so end labels never clip
+const LABEL_W = 156; // px reserved per label
+const LANE_H = 46; // px per stacked lane
+const TOP = 10; // px top inset
+const AXIS_GAP = 28; // px between the lowest lane and the axis
 
 export function TimelineBoard({
   entries,
@@ -36,83 +40,91 @@ export function TimelineBoard({
 }) {
   const [hover, setHover] = useState<string | null>(null);
 
-  const placed = useMemo(() => {
+  const { placed, width, laneCount } = useMemo(() => {
     const nums = entries.map((e) => Number(e.sortKey));
     const min = Math.min(...nums);
     const max = Math.max(...nums);
     const span = max - min || 1;
+    // Canvas is at least this wide; grows with entry count so clusters spread
+    // and the strip scrolls instead of cropping.
+    const w = Math.max(560, entries.length * 185);
+    const usable = w - 2 * PAD - LABEL_W; // anchor range keeps every label inside
     const laneLastX: number[] = [];
-    return entries.map((e, i) => {
-      const x = ((nums[i]! - min) / span) * 100;
-      let lane = laneLastX.findIndex((last) => x - last >= MIN_GAP);
+    const out = entries.map((e, i) => {
+      const leftPx = PAD + ((nums[i]! - min) / span) * usable;
+      // stack vertically when labels would overlap horizontally
+      let lane = laneLastX.findIndex((last) => leftPx - last >= LABEL_W * 0.6);
       if (lane === -1) {
         lane = laneLastX.length;
-        laneLastX.push(x);
+        laneLastX.push(leftPx);
       } else {
-        laneLastX[lane] = x;
+        laneLastX[lane] = leftPx;
       }
-      return { ...e, x, lane };
+      return { ...e, leftPx, lane };
     });
+    return { placed: out, width: w, laneCount: Math.max(1, laneLastX.length) };
   }, [entries]);
 
-  const laneCount = Math.max(1, ...placed.map((p) => p.lane + 1));
-  const height = laneCount * LANE_H + 28;
+  const height = TOP + laneCount * LANE_H + AXIS_GAP + 22;
+  const axisY = height - 22;
 
   return (
     <div className="mb-4">
-      <div
-        className="relative w-full overflow-hidden rounded-md border border-line bg-surface px-2"
-        style={{ height }}
-      >
-        {/* baseline axis */}
-        <div className="absolute inset-x-2 bottom-6 h-px bg-line" />
-        {placed.map((p) => {
-          const top = p.lane * LANE_H + 6;
-          const active = hover === p.id;
-          const marker = (
-            <div
-              className="flex flex-col items-start gap-0.5"
-              onMouseEnter={() => setHover(p.id)}
-              onMouseLeave={() => setHover(null)}
-            >
-              <span
-                className={`max-w-[160px] truncate text-[11px] ${active ? "text-ink" : "text-soft"}`}
+      <div className="overflow-x-auto overflow-y-hidden rounded-md border border-line bg-surface">
+        <div className="relative" style={{ width, height }}>
+          <div className="absolute h-px bg-line" style={{ left: PAD, right: PAD, top: axisY }} />
+          {placed.map((p) => {
+            const top = TOP + p.lane * LANE_H;
+            const active = hover === p.id;
+            const body = (
+              <>
+                <span
+                  className={`block truncate text-[11px] ${active ? "text-ink" : "text-soft"}`}
+                  title={p.label}
+                >
+                  {p.label}
+                </span>
+                <span className="tnum block text-[10px] text-accent">{p.dateText}</span>
+              </>
+            );
+            return (
+              <div
+                key={p.id}
+                className="absolute"
+                style={{ left: p.leftPx, top, width: LABEL_W }}
+                onMouseEnter={() => setHover(p.id)}
+                onMouseLeave={() => setHover(null)}
               >
-                {p.label}
-              </span>
-              <span className="tnum text-[10px] text-accent">{p.dateText}</span>
-            </div>
-          );
-          return (
-            <div
-              key={p.id}
-              className="absolute"
-              style={{ left: `calc(${p.x}% )`, top, transform: "translateX(-2px)" }}
-            >
-              {p.cardId ? (
-                <Link href={`/series/${seriesId}/cards/${p.cardId}`}>{marker}</Link>
-              ) : (
-                marker
-              )}
-              {/* stem to the axis */}
-              <div
-                className="absolute w-px bg-line"
-                style={{ left: 1, top: 28, height: height - top - 28 - 6 }}
-              />
-              <div
-                className="absolute size-2 rounded-full bg-accent"
-                style={{ left: -3, bottom: -(height - top - 28) + 22 }}
-              />
-            </div>
-          );
-        })}
-        {/* end anchors */}
-        <span className="tnum absolute bottom-1 left-2 text-[10px] text-soft">
-          {placed[0]?.dateText}
-        </span>
-        <span className="tnum absolute bottom-1 right-2 text-[10px] text-soft">
-          {placed[placed.length - 1]?.dateText}
-        </span>
+                {/* stem down to the axis */}
+                <div
+                  className="absolute w-px bg-line"
+                  style={{ left: 0, top: 30, height: Math.max(0, axisY - top - 30) }}
+                />
+                {/* dot sitting on the axis */}
+                <div
+                  className="absolute size-2 rounded-full bg-accent"
+                  style={{ left: -3, top: axisY - top - 4 }}
+                />
+                {p.cardId ? (
+                  <Link href={`/series/${seriesId}/cards/${p.cardId}`} className="block">
+                    {body}
+                  </Link>
+                ) : (
+                  body
+                )}
+              </div>
+            );
+          })}
+          <span className="tnum absolute text-[10px] text-soft" style={{ left: PAD, top: axisY + 6 }}>
+            {placed[0]?.dateText}
+          </span>
+          <span
+            className="tnum absolute text-[10px] text-soft"
+            style={{ right: PAD, top: axisY + 6 }}
+          >
+            {placed[placed.length - 1]?.dateText}
+          </span>
+        </div>
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-soft">
@@ -131,7 +143,7 @@ export function TimelineBoard({
         )}
         <span>
           Axis is in-world time; the reveal clamp is a server-side filter, not an axis position —
-          entries past your progress are withheld entirely.
+          entries past your progress are withheld entirely. Scroll horizontally for later dates.
         </span>
       </div>
     </div>
