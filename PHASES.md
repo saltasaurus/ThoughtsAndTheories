@@ -55,21 +55,31 @@ and fixed, with regression tests:
 8. Cascade raises and field clears wrote no CardField revisions. Fix: both
    revisioned.
 
-## Phase 2 — data cores done, UI pending
+## Phase 2 — done
 
-- **Search** — shipped early and functional (`app/series/[seriesId]/search/`),
-  title+summary only, gated per card via `searchCards` in `lib/visibility.ts`.
-  Currently `ILIKE` contains; Phase 2 will move it to a precomputed tsvector.
-- **Knowledge graph** — gated data core done and tested
-  (`graphData` in `lib/visibility.ts`: omits gated nodes entirely, node cap
-  with `truncated` flag). Cytoscape + fcose UI pending
-  (`app/series/[seriesId]/graph/` is an honest scaffold).
-- **Timeline board** — gated, clamped query done (`listTimeline`); Phase 1
-  ships a list view (`app/series/[seriesId]/timeline/`). The vis-timeline
-  board is pending; per spec, if vis-timeline cannot take a plain integer
-  axis we will build a custom axis rather than coercing in-world dates into
-  real `Date`s.
-- **Relations board** — pending; card detail already lists gated relations.
+All four Phase 2 features are built on top of the Phase-1 gated data cores.
+Verified: `tsc --noEmit` clean, `npm test` 43/43, `next build` green.
+
+- **Knowledge graph** — `components/graph/graph-view.tsx` (Cytoscape + fcose)
+  over `graphData()`. Card type → node color (theme CSS vars, dark/light
+  aware), relation weight → edge thickness, degree → node size, directed edges
+  get arrowheads, client-side type filter, node-cap notice, click → detail
+  panel listing a node's visible connections. Gated cards omitted — no phantom
+  nodes. Page: `app/series/[seriesId]/graph/`.
+- **Timeline board** — `components/timeline/timeline-board.tsx` over the
+  clamped `listTimeline()`. Custom in-world axis (see deviation 18) positioning
+  dated entries by `absoluteSortKey`, lane-stacked, in-world date labels via
+  `formatInWorldDate`, click-through to cards. Progress + session-goal shown as
+  legend/state indicators, not axis positions. The list view remains below as
+  an accessible fallback and holds the UNKNOWN-precision group.
+- **Relations board** — `app/series/[seriesId]/cards/[cardId]/relations/`,
+  grouping a card's visible edges by type with direction + weight bars, over
+  `listRelationsForCard()`. Linked from card detail. Both endpoints must be
+  visible, so gated relations are omitted.
+- **Search** — upgraded from Phase-1 `ILIKE` to Postgres full-text over a
+  precomputed, GIN-indexed `searchVector` (`searchCards` in
+  `lib/visibility.ts`, raw SQL + `websearch_to_tsquery`). Title + summary only,
+  gate + soft-delete + keyset cursor preserved. See deviation 19.
 
 ## Phase 3 — scaffolded with real routes and honest TODOs
 
@@ -138,3 +148,18 @@ and fixed, with regression tests:
     dev-profile container) — the gate lives in queries, so unit-mocking Prisma
     would test nothing. Files run sequentially; the bootstrap test wipes the
     test DB deliberately as its final act.
+18. **(Phase 2) Custom timeline axis instead of vis-timeline.** vis-timeline
+    models its axis as real JS `Date`s and cannot accept a plain integer/bigint
+    axis. Per SPEC's explicit instruction ("implement a custom axis rather than
+    coercing in-world dates into `Date`; say so explicitly in PHASES.md"), the
+    board is a hand-built axis driven by `absoluteSortKey`, with in-world date
+    labels via `formatInWorldDate`. No fictional date is ever mapped to a real
+    `Date`. `vis-timeline` is therefore not a dependency.
+19. **(Phase 2) Search vector is a trigger-maintained column, not `GENERATED`.**
+    A `GENERATED ALWAYS AS … STORED` column is the tidier SQL, but Prisma cannot
+    represent the generated expression, so it reports perpetual drift and tries
+    to drop it on every `migrate dev`. A plain `tsvector` column kept current by
+    a `BEFORE INSERT OR UPDATE` trigger is invisible to Prisma (schema:
+    `Unsupported("tsvector")?`), so there is no drift. Same auto-maintenance,
+    portable, and `migrate status` stays clean. Migration:
+    `prisma/migrations/20260720072500_add_search_vector/`.
