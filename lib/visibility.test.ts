@@ -88,6 +88,28 @@ describe("locked placeholders (card list)", () => {
   });
 });
 
+describe("full-text search (precomputed tsvector)", () => {
+  it("matches by stemmed lexeme over title + summary, not substring", async () => {
+    const f = await createFixture();
+    const owner = await getViewer(f.owner.id, f.seriesId);
+    await makeCard(f.seriesId, f.owner.id, {
+      type: "FACTION",
+      title: "The Wandering Merchants",
+      summary: "A caravan guild.",
+      section: f.sections[0]!,
+    });
+    // plural/inflected queries stem to the stored lexeme and match
+    expect((await searchCards(owner, "merchant")).items).toHaveLength(1);
+    expect((await searchCards(owner, "caravans")).items).toHaveLength(1);
+    // a term in neither field does not match
+    expect((await searchCards(owner, "dragon")).items).toHaveLength(0);
+    // a substring fragment is NOT a lexeme — proves this is full-text, not ILIKE
+    expect((await searchCards(owner, "merch")).items).toHaveLength(0);
+    // blank query yields nothing rather than everything
+    expect((await searchCards(owner, "   ")).items).toHaveLength(0);
+  });
+});
+
 describe("field gating (independent of parent card)", () => {
   let f: Fixture;
 

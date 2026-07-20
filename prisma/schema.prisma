@@ -200,8 +200,14 @@ model Card {
   relationsTo   CardRelation[]  @relation("RelationTo")
   timeline      TimelineEntry[]
 
+  // Precomputed full-text over title + summary (safe: gating is per-row here).
+  // Populated by a GENERATED column in the migration — Prisma treats it as
+  // opaque and never writes it. Searched via raw SQL in lib/visibility.ts.
+  searchVector Unsupported("tsvector")?
+
   @@index([seriesId, revealIndex])
   @@index([seriesId, type])
+  @@index([searchVector], type: Gin)
 }
 
 model CardField {

@@ -4,7 +4,8 @@
  * soft-deleted rows are always excluded, and "spoiler peek" (OWNER/EDITOR only)
  * lifts the reveal gate — never the soft-delete filter.
  */
-import type { CardType, Prisma, RevisionEntityType, Role, SectionType } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { CardType, RevisionEntityType, Role, SectionType } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { NotFoundError, PeekForbiddenError } from "@/lib/errors";
 import { sectionLabel } from "@/lib/section-label";
@@ -530,9 +531,11 @@ export async function listSectionOptions(viewer: Viewer): Promise<SectionOption[
 // ---------- search & graph (gated cores; Phase 2 adds their UI) ----------
 
 /**
- * Search omits gated cards entirely — no placeholders. Title + summary only:
- * per-field gating cannot be reconciled with per-row search, and a match
- * against a gated field would leak that the term exists.
+ * Search omits gated cards entirely — no placeholders. Title + summary only,
+ * via the precomputed `searchVector` (GIN-indexed): per-field gating cannot be
+ * reconciled with a per-row vector, and a match against a gated field would
+ * leak that the term exists. websearch_to_tsquery parses free user text safely.
+ * The reveal gate is applied in the same WHERE, so gated cards never match.
  */
 export async function searchCards(
   viewer: Viewer,
@@ -540,19 +543,43 @@ export async function searchCards(
   opts: { cursor?: string; pageSize?: number } = {},
 ): Promise<{ items: VisibleCardSummary[]; nextCursor: string | null }> {
   const pageSize = opts.pageSize ?? PAGE_SIZE;
-  const rows = await prisma.card.findMany({
-    where: {
-      seriesId: viewer.seriesId,
-      ...gateWhere(viewer),
-      OR: [
-        { title: { contains: query, mode: "insensitive" } },
-        { summary: { contains: query, mode: "insensitive" } },
-      ],
-    },
-    orderBy: [{ revealIndex: "asc" }, { id: "asc" }],
-    take: pageSize + 1,
-    ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-  });
+  const q = query.trim();
+  if (!q) return { items: [], nextCursor: null };
+
+  // Keyset over (revealIndex, id) — same order/cursor contract as listCards, so
+  // slot position never leaks a content-derived sort. Public cursor is the id.
+  let cursorClause = Prisma.empty;
+  if (opts.cursor) {
+    const c = await prisma.card.findFirst({
+      where: { id: opts.cursor, seriesId: viewer.seriesId },
+      select: { revealIndex: true },
+    });
+    if (c) {
+      cursorClause = Prisma.sql`AND ("revealIndex", "id") > (${c.revealIndex}, ${opts.cursor})`;
+    }
+  }
+  const gate = viewer.peek ? Prisma.empty : Prisma.sql`AND "revealIndex" <= ${viewer.revealIndex}`;
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      type: CardType;
+      title: string;
+      summary: string | null;
+      confidence: number | null;
+      revealIndex: number;
+    }>
+  >`
+    SELECT "id", "type", "title", "summary", "confidence", "revealIndex"
+    FROM "Card"
+    WHERE "seriesId" = ${viewer.seriesId}
+      AND "deletedAt" IS NULL
+      ${gate}
+      ${cursorClause}
+      AND "searchVector" @@ websearch_to_tsquery('english', ${q})
+    ORDER BY "revealIndex" ASC, "id" ASC
+    LIMIT ${pageSize + 1}
+  `;
   const page = rows.slice(0, pageSize);
   const last = page[page.length - 1];
   return {
