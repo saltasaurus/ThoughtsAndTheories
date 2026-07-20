@@ -89,7 +89,14 @@ export default async function CardDetailPage({
         </Panel>
       )}
 
-      <h2 className="mb-2 text-lg">Relations</h2>
+      <div className="mb-2 flex items-baseline gap-3">
+        <h2 className="text-lg">Relations</h2>
+        {card.relations.length > 0 && (
+          <Link href={`${base}/${card.id}/relations`} className="text-xs text-accent underline">
+            Board view →
+          </Link>
+        )}
+      </div>
       {card.relations.length === 0 ? (
         <p className="mb-4 text-sm text-soft">No visible relations.</p>
       ) : (
