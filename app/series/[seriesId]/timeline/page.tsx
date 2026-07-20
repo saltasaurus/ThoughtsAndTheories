@@ -8,6 +8,7 @@ import {
 } from "@/app/actions/timeline";
 import { SectionSelect } from "@/components/cards/section-select";
 import { ErrorNote } from "@/components/error-note";
+import { TimelineBoard } from "@/components/timeline/timeline-board";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import { formatInWorldDate } from "@/lib/calendar";
 import { prisma } from "@/lib/db";
 import { getSeriesCalendar } from "@/lib/services/calendar-admin";
 import {
+  getActiveSession,
   getVisibleCardTitles,
   listSectionOptions,
   listTimeline,
@@ -34,12 +36,38 @@ export default async function TimelinePage({
   const { seriesId } = await params;
   const sp = await searchParams;
   const viewer = await getRequestViewer(seriesId);
-  const [{ dated, undated, nextCursor }, calendar, options] = await Promise.all([
+  const [{ dated, undated, nextCursor }, calendar, options, active] = await Promise.all([
     listTimeline(viewer, { cursor: sp.cursor }),
     getSeriesCalendar(seriesId),
     listSectionOptions(viewer),
+    getActiveSession(viewer),
   ]);
   const calendarLike = { eras: calendar?.eras ?? [], months: calendar?.months ?? [] };
+  const inWorld = (e: TimelineEntryView): string =>
+    formatInWorldDate(
+      {
+        eraId: e.eraId,
+        year: e.year,
+        monthOrder: e.monthOrder,
+        day: e.day,
+        precision: e.precision as DatePrecision,
+        displayOverride: e.displayOverride,
+      },
+      calendarLike,
+    );
+  // Board consumes only dated entries; bigint sortKey crosses the client
+  // boundary as a string. In-world dates are formatted server-side.
+  const boardEntries = dated
+    .filter((e) => e.absoluteSortKey !== null)
+    .map((e) => ({
+      id: e.id,
+      label: e.label,
+      dateText: inWorld(e),
+      cardId: e.cardId,
+      sortKey: String(e.absoluteSortKey),
+    }));
+  const progressLabel =
+    options.find((o) => o.position === viewer.revealIndex)?.label ?? "series start";
   const cardTitles = await getVisibleCardTitles(
     viewer,
     [...dated, ...undated].flatMap((e) => (e.cardId ? [e.cardId] : [])),
@@ -55,19 +83,7 @@ export default async function TimelinePage({
 
   const row = (e: TimelineEntryView) => (
     <li key={e.id} className="flex items-start gap-3 border-b border-line py-2 last:border-0">
-      <span className="tnum w-44 shrink-0 text-sm text-accent">
-        {formatInWorldDate(
-          {
-            eraId: e.eraId,
-            year: e.year,
-            monthOrder: e.monthOrder,
-            day: e.day,
-            precision: e.precision as DatePrecision,
-            displayOverride: e.displayOverride,
-          },
-          calendarLike,
-        )}
-      </span>
+      <span className="tnum w-44 shrink-0 text-sm text-accent">{inWorld(e)}</span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{e.label}</p>
         {e.description && <p className="text-xs text-soft">{e.description}</p>}
@@ -100,9 +116,17 @@ export default async function TimelinePage({
       <h1 className="mb-1 text-2xl">Timeline</h1>
       <p className="mb-3 text-xs text-soft">
         Ordered by in-world time; entries beyond your reading position are withheld by the server.
-        The visual timeline board arrives in Phase 2.
       </p>
       <ErrorNote error={sp.error} />
+
+      {boardEntries.length > 0 && (
+        <TimelineBoard
+          entries={boardEntries}
+          progressLabel={progressLabel}
+          goalLabel={active ? active.goalSection.label : null}
+          seriesId={seriesId}
+        />
+      )}
 
       <Panel className="mb-4">
         {dated.length === 0 ? (
