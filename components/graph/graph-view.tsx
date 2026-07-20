@@ -105,37 +105,78 @@ export function GraphView({
           selector: "node",
           style: {
             "background-color": (ele: cytoscape.NodeSingular) => typeColor(ele.data("type")),
+            // a canvas-colored ring gives touching nodes a visible moat
+            "border-width": 2,
+            "border-color": cssVar("--canvas"),
+            // isolated nodes recede so the connected structure reads clearly
+            opacity: (ele: cytoscape.NodeSingular) => (ele.data("deg") === 0 ? 0.45 : 1),
             label: "data(title)",
             color: cssVar("--color-ink"),
-            "font-size": 9,
-            "text-wrap": "ellipsis",
-            "text-max-width": "90px",
+            "font-size": 11,
+            "font-weight": 600,
             "text-valign": "bottom",
-            "text-margin-y": 3,
-            // degree-based sizing, clamped
-            width: (ele: cytoscape.NodeSingular) => 20 + Math.min(ele.data("deg") * 6, 46),
-            height: (ele: cytoscape.NodeSingular) => 20 + Math.min(ele.data("deg") * 6, 46),
+            "text-halign": "center",
+            "text-margin-y": 5,
+            "text-wrap": "ellipsis",
+            "text-max-width": "116px",
+            // chip behind the label keeps it readable over edges and neighbours
+            "text-background-color": cssVar("--canvas"),
+            "text-background-opacity": 0.8,
+            "text-background-shape": "roundrectangle",
+            "text-background-padding": "3px",
+            "min-zoomed-font-size": 9, // hide labels when zoomed far out (declutter)
+            // degree-based sizing; isolated nodes stay small
+            width: (ele: cytoscape.NodeSingular) =>
+              ele.data("deg") === 0 ? 16 : 26 + Math.min(ele.data("deg") * 7, 52),
+            height: (ele: cytoscape.NodeSingular) =>
+              ele.data("deg") === 0 ? 16 : 26 + Math.min(ele.data("deg") * 7, 52),
           },
         },
         {
           selector: "edge",
           style: {
             // weight (0..1) → thickness
-            width: (ele: cytoscape.EdgeSingular) => 1 + ele.data("weight") * 7,
-            "line-color": cssVar("--color-line"),
+            width: (ele: cytoscape.EdgeSingular) => 1.2 + ele.data("weight") * 7,
+            "line-color": cssVar("--color-soft"),
             "curve-style": "bezier",
             "target-arrow-shape": (ele: cytoscape.EdgeSingular) =>
               ele.data("directed") ? "triangle" : "none",
-            "target-arrow-color": cssVar("--color-line"),
-            opacity: 0.7,
+            "target-arrow-color": cssVar("--color-soft"),
+            "arrow-scale": 0.9,
+            opacity: 0.5,
           },
         },
         {
           selector: "node:selected",
-          style: { "border-width": 3, "border-color": cssVar("--color-accent") },
+          style: {
+            "border-width": 3,
+            "border-color": cssVar("--color-accent"),
+            opacity: 1,
+          },
+        },
+        // hover focus: everything not in the hovered node's neighbourhood fades
+        {
+          selector: ".dim",
+          style: { opacity: 0.12, "text-opacity": 0.08 },
+        },
+        {
+          selector: ".focus",
+          style: { opacity: 1, "text-opacity": 1 },
         },
       ],
-      layout: { name: "fcose", quality: "default", animate: false } as cytoscape.LayoutOptions,
+      layout: {
+        name: "fcose",
+        quality: "proof",
+        randomize: true,
+        animate: false,
+        padding: 36,
+        nodeSeparation: 160,
+        idealEdgeLength: 100,
+        nodeRepulsion: 9000,
+        gravity: 0.22,
+        gravityRange: 3.8,
+        packComponents: true,
+      } as cytoscape.LayoutOptions,
       minZoom: 0.2,
       maxZoom: 3,
     });
@@ -145,6 +186,15 @@ export function GraphView({
     });
     cy.on("tap", (evt) => {
       if (evt.target === cy) setSelected(null);
+    });
+    // hover a node → focus its closed neighbourhood, fade the rest
+    cy.on("mouseover", "node", (evt) => {
+      const focus = evt.target.closedNeighborhood();
+      cy.elements().addClass("dim");
+      focus.removeClass("dim").addClass("focus");
+    });
+    cy.on("mouseout", "node", () => {
+      cy.elements().removeClass("dim").removeClass("focus");
     });
     cyRef.current = cy;
     return () => {
@@ -227,8 +277,9 @@ export function GraphView({
 
       <p className="mt-2 text-[11px] text-soft">
         {nodes.length} node{nodes.length === 1 ? "" : "s"} · {edges.length} edge
-        {edges.length === 1 ? "" : "s"} · node size = connections, edge thickness = weight. Gated
-        cards are omitted entirely — no phantom nodes.
+        {edges.length === 1 ? "" : "s"} · node size = connections, edge thickness = weight. Hover a
+        node to focus its neighbourhood; faded nodes have no relations yet. Gated cards are omitted
+        entirely — no phantom nodes.
         {truncated && " Showing the node cap; some cards are not drawn."}
       </p>
     </div>
