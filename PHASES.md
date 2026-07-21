@@ -81,17 +81,106 @@ Verified: `tsc --noEmit` clean, `npm test` 43/43, `next build` green.
   `lib/visibility.ts`, raw SQL + `websearch_to_tsquery`). Title + summary only,
   gate + soft-delete + keyset cursor preserved. See deviation 19.
 
-## Phase 3 — scaffolded with real routes and honest TODOs
+## Phase 3 — done
 
-- Template editor UI — `app/series/[seriesId]/templates/` (read-only view now;
-  model + seeding are real).
-- Calendar editor — `app/series/[seriesId]/calendar/` (read-only view now;
-  era-offset recompute already transactional + tested).
-- Revision history browser — `app/series/[seriesId]/cards/[cardId]/history/`
-  (writes + gated reads already real).
-- REST API — `app/api/v1/route.ts` answers 501.
-- Session roster analytics, JSON export/import — noted as TODOs on the
-  sessions/settings pages.
+All six spec areas built on the Phase-1 gated cores. Verified: `tsc --noEmit`
+clean (strict, no `any`), `npm test` 118/118, `next build` green, new migration
+applied.
+
+| Area | Where |
+|---|---|
+| Template editor: add/edit/reorder/retire/restore fields for all 7 types, with `fieldType` immutability + choice-removal guards and app-enforced `(templateId, key)` uniqueness | `lib/services/templates.ts`, `app/actions/templates.ts`, `app/series/[seriesId]/templates/` |
+| Calendar editor: create calendar (one per series), edit week config, add/rename eras + months, delete with referential guards; era-offset edits recompute every sort key in one transaction | `lib/services/calendar-admin.ts`, `app/actions/calendar.ts`, `app/series/[seriesId]/calendar/` |
+| Revision history browser: chronological card + field diffs, gated by the same `listRevisions` snapshot rule | `app/series/[seriesId]/cards/[cardId]/history/` |
+| Session roster analytics: aggregate state counts against the active goal | `getRosterAnalytics` in `lib/services/memberships.ts`, `app/series/[seriesId]/sessions/` |
+| REST API v1: token auth, reads (cards/detail/graph/timeline/search) + writes (create/update/set-field), gated through the same `lib/visibility.ts` functions the UI uses | `lib/api.ts`, `lib/services/api-tokens.ts`, `app/api/v1/**`, `app/actions/tokens.ts` |
+| `ApiToken` model + migration; token create (shown once) / revoke UI | `prisma/migrations/*_add_api_token/`, `app/series/[seriesId]/settings/` |
+| JSON export/import: whole-series export, import-as-new-series in one transaction with full FK remap and derived-value recompute | `lib/services/export-import.ts`, `app/series/[seriesId]/export/route.ts`, `app/actions/export-import.ts` |
+
+Tests: `lib/services/templates.test.ts`, `lib/services/calendar-admin.test.ts`,
+`tests/phase3.test.ts`, `tests/api-v1.test.ts`, `tests/export-import.test.ts`,
+`tests/hardening.test.ts`.
+
+### Hardening round (post-build adversarial review)
+
+Same shape as Phase 1's: 3 independent finder lenses (spoiler-leak,
+auth/permissions, data integrity), every finding verified against the code
+before it was fixed, regression test per confirmed finding in
+`tests/hardening.test.ts`. Confirmed and fixed:
+
+1. **critical** — `exportSeries` emitted files its own `parseSeriesExport`
+   rejected. The recursive JSON schema was typed against
+   `Prisma.InputJsonValue`, which deliberately excludes `null`, but every
+   `INWORLD_DATE` value carries nulls (`eraId`/`monthOrder`/`day`/
+   `displayOverride`) and `INWORLD_DATE` is in the default EVENT template. Any
+   series with an in-world date produced an unrestorable backup. Fix: `z.null()`
+   in the union, with a `JsonLike` type that models the file rather than the
+   Prisma write type.
+2. **major** — the card-list `type` filter was applied *before* the reveal gate,
+   so locked placeholders were type-filtered too. Differencing the type tabs
+   recovered the type — and per-type count — of every card above the viewer's
+   progress, from the plain web UI. Fix: the filter applies to the visible
+   branch only; the locked set is identical on every tab.
+3. **major** — the template `fieldType`-immutability and choice-removal guards
+   ignored values on soft-deleted cards, but `restoreCard` re-validates nothing.
+   Soft-delete → retype → restore produced exactly the malformed state the
+   guards exist to prevent. Fix: guards (and the UI's "locked" hint) count
+   values on soft-deleted cards.
+4. **major** — `deleteEra` is a hard delete and `TimelineEntry.eraId` is
+   `ON DELETE SET NULL`, but the in-use check skipped soft-deleted entries. A
+   restorable entry could have its era silently nulled while keeping a stale
+   `absoluteSortKey` that `recomputeCalendarSortKeys` (an inner join) could
+   never repair. Fix: soft-deleted entries count as in use.
+5. **major** — `deleteEra`/`deleteMonth` ignored `INWORLD_DATE` **card field**
+   values, which embed `eraId`/`monthOrder` in JSON with no FK behind them.
+   Deleting an "unused" era silently re-dated cards. Fix: both checks also count
+   matching card-field values.
+6. **minor** — `importSeriesAction` authenticated but never authorized; the
+   OWNER-only Export/Import panel is a rendering rule, and a Server Action is a
+   POST endpoint. Not an escalation (import always creates a new series), but
+   the guard belonged there. Fix: `getRequestViewer` + `requireOwner`.
+7. **minor** — `jumpToGoalAction` queried `ClubSession` on an unvalidated
+   `seriesId` *before* any membership check, and `runAndRedirect` reflected the
+   distinguishing message into the URL — a "does this series exist and is it
+   running a session" oracle for any logged-in user, defeating `getViewer`'s
+   deliberate 404. Fix: resolve membership first.
+8. **minor** — the API `errorResponse` catch-all swallowed Next's `redirect()`
+   (implemented as a thrown `NEXT_REDIRECT`), turning a login bounce on the
+   export URL into a 500. Fix: re-throw framework control-flow errors.
+9. **minor** — the one-time new-token cookie was scoped `path: "/"`, so the
+   plaintext token rode along on every request to the origin and re-rendered on
+   every *other* series' settings page. Fix: scoped to the page that displays it.
+10. **minor** — duplicate `key`s in an import file passed the shape schema but
+    silently made every reference resolve to whichever row came last. Fix:
+    uniqueness assertion inside `parseSeriesExport`, so "malformed" still means
+    "fails validation".
+11. **major** — the roster paired a member's *name* with a "behind / at goal /
+    ahead" comparison against the ACTIVE session's goal, and an EDITOR may
+    retarget that goal freely. One observation is harmless; repeating it
+    binary-searches any member's exact reading position in ~log₂(sections)
+    reloads — the same comparison oracle Phase 1's hardening closed for
+    `lowerMemberProgress` (item 4 there), handed to a lower role through a
+    cleaner interface. Granularity was never the issue: ANY per-name comparison
+    against a movable threshold is searchable, so coarsening the badge would
+    have fixed nothing. Resolved by product decision (see deviation 28): goals
+    stay freely movable — the more useful capability — and the per-member badge
+    is removed. `listMembers` now returns identity and role only; pacing is
+    reported by the aggregate `getRosterAnalytics`, which names nobody.
+
+Refuted after investigation (recorded so they aren't re-litigated): API payloads
+never exceed what the UI's own visibility functions return; the history page's
+queried entity-id set, ordering and empty state disclose nothing; gated,
+missing and other-series cards all collapse to an identical 404; `maxRevealIndex`
+is intersected with the viewer's progress and can only narrow; peek is
+unreachable from the API (hardcoded `false`, and `PEEK_COOKIE` is read only by
+the cookie path); every id-taking service function constrains to
+`viewer.seriesId`; and `importSeries` remaps all 12 FK families with no path
+that leaves a pointer into the source series.
+
+Nothing is left knowingly unfixed. The one finding that required a product
+decision rather than a patch — the roster position oracle — was decided in
+favour of keeping goals movable and dropping the per-member badge; see hardening
+item 11 and deviation 28.
 
 ## Deviations & judgment calls (spec allows none silently — so, aloud)
 
@@ -163,3 +252,65 @@ Verified: `tsc --noEmit` clean, `npm test` 43/43, `next build` green.
     `Unsupported("tsvector")?`), so there is no drift. Same auto-maintenance,
     portable, and `migrate status` stays clean. Migration:
     `prisma/migrations/20260720072500_add_search_vector/`.
+20. **(Phase 3) The template editor edits fields, not card types.** `CardType`
+    is a Prisma enum of 7 fixed values; adding one is a schema migration, not a
+    UI action. The editor adds/edits/reorders/retires *fields* within the seven
+    existing templates. `TemplateField.key` is immutable after creation (it is
+    the stable identifier); `fieldType` and SELECT/MULTISELECT `options` are
+    mutable only while no stored value would be invalidated.
+21. **(Phase 3) Months are append-only and never renumbered.** Timeline entries
+    store the raw integer `monthOrder`, not an FK, so reordering or renumbering
+    months would silently re-date every stored entry. Months support add
+    (append), rename, and guarded delete; `order` is fixed at creation, and
+    survivors keep their values (gaps are fine) when one is deleted.
+22. **(Phase 3) API tokens are hashed with SHA-256, not bcrypt.** bcrypt suits
+    passwords because the email is the lookup key and the secret is
+    low-entropy. A bearer token has neither property: there is no lookup key but
+    the token itself, and a salted hash cannot be queried, forcing a full-table
+    compare on every request. Tokens are 256 bits of `randomBytes`, so an
+    unsalted fast hash loses nothing and makes `findUnique({ tokenHash })` work.
+    Tokens are scoped to a USER (carrying exactly that user's memberships and
+    reading position) and never carry spoiler peek.
+23. **(Phase 3) API card detail 404s a gated card rather than returning a
+    placeholder.** Locked placeholders exist only in *list* views, matching
+    `getCardDetail`'s `null`. Gated, nonexistent and other-series cards all
+    return an identical 404, so the status code is not an existence oracle.
+24. **(Phase 3) Roster analytics are aggregate-only and active-session-only.**
+    Memberships are not revisioned (deviation 16 bounds revisions to
+    Card/CardField), so no historical position data exists. A "per-past-session"
+    breakdown computed from *current* positions against old goals would be a
+    monotone artifact — everyone drifts to "ahead" as they read on — so it is
+    cut rather than shipped as pseudo-history.
+25. **(Phase 3) Export is OWNER-only and deliberately ungated; import always
+    creates a NEW series.** Export reads through unredacted reads, not
+    `lib/visibility.ts` — it is a backup tool at the same trust level as direct
+    DB access. It excludes `Membership`, sessions, reading positions and
+    `Invite` (instance-specific) and `Revision` (its `userId` FKs name users
+    that do not exist on the target instance, and no admin path may leak
+    diffs). Import never merges into an existing series, runs in one
+    transaction, reassigns `Card.createdById` to the importer, and creates the
+    importer's OWNER membership — without one, `getViewer` throws for everyone
+    and the imported series would be unreachable.
+26. **(Phase 3) Import does not call `createSeries`.** That helper seeds the
+    seven default templates, which would collide with the file's own templates
+    on `@@unique([seriesId, cardType])`. The `Series` row and OWNER membership
+    are written directly inside the import transaction instead.
+27. **(Phase 3) Derived values are omitted from the export file and recomputed
+    on load.** `Section.position`, every cached `revealIndex`, and
+    `TimelineEntry.absoluteSortKey` (a `BigInt`, which `JSON.stringify` throws
+    on outright) are rebuilt by `recomputeSeriesPositions` and
+    `recomputeCalendarSortKeys` inside the same transaction, from the FKs that
+    are the source of truth. API responses serialise `BigInt` as a decimal
+    string for the same reason.
+28. **(Phase 3) The roster shows no per-member progress state — a deliberate
+    departure from SPEC.** SPEC asks for per-member "behind / at goal / ahead"
+    badges. Shipping that alongside an EDITOR-settable session goal makes every
+    member's exact position binary-searchable by repeated observation (hardening
+    item 11), which the same spec forbids ("never a name paired with a
+    position"). The two requirements cannot both hold: a per-name comparison
+    against a threshold the observer controls is searchable at any granularity.
+    Given the choice, freely retargetable goals are the more useful capability
+    for running a book club, so the badge is dropped and pacing is reported in
+    aggregate (`getRosterAnalytics`: counts of behind/at-goal/ahead, naming
+    nobody). `listMembers` returns identity and role only, and a regression test
+    asserts it stays invariant as the goal moves.

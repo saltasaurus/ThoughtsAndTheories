@@ -88,6 +88,7 @@ model User {
   createdInvites  Invite[]      @relation("InviteCreator")
   createdSessions ClubSession[] @relation("SessionCreator")
   revisions       Revision[]
+  apiTokens       ApiToken[]
 }
 
 model Series {
@@ -406,4 +407,27 @@ model Invite {
   createdBy User   @relation("InviteCreator", fields: [createdById], references: [id])
 
   @@index([seriesId])
+}
+
+// A bearer token for the v1 REST API. Scoped to a USER, not a series: it
+// carries exactly the user's existing memberships, so it can never reach a
+// series the user couldn't already reach in the UI.
+//
+// tokenHash is an UNSALTED SHA-256 of a 256-bit random token, and is @unique so
+// auth is a single findUnique. bcrypt is right for passwords (email is the
+// lookup key) but wrong here: a salted hash isn't queryable, forcing a
+// full-table compare scan per request. The token has no low-entropy preimage to
+// protect, so a fast hash loses nothing.
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  label      String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }

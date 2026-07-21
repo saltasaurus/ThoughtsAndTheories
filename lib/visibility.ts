@@ -93,11 +93,28 @@ export async function listCards(
   opts: { type?: CardType; cursor?: string; pageSize?: number } = {},
 ): Promise<{ items: CardListItem[]; nextCursor: string | null }> {
   const pageSize = opts.pageSize ?? PAGE_SIZE;
+  // The type filter must NEVER narrow the gated set. A locked placeholder that
+  // appears under ?type=THEORY but not under ?type=CHARACTER discloses that
+  // card's type, and differencing the tabs recovers the type — and the
+  // per-type count — of every card above the viewer's progress. So the filter
+  // applies to the visible branch only: the locked set is identical on every
+  // tab. Under peek there is no gated set to protect.
+  const typeFilter: Prisma.CardWhereInput =
+    opts.type === undefined
+      ? {}
+      : viewer.peek
+        ? { type: opts.type }
+        : {
+            OR: [
+              { type: opts.type, revealIndex: { lte: viewer.revealIndex } },
+              { revealIndex: { gt: viewer.revealIndex } },
+            ],
+          };
   const rows = await prisma.card.findMany({
     where: {
       seriesId: viewer.seriesId,
       deletedAt: null,
-      ...(opts.type ? { type: opts.type } : {}),
+      ...typeFilter,
     },
     orderBy: [{ revealIndex: "asc" }, { id: "asc" }],
     take: pageSize + 1,

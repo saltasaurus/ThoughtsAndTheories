@@ -45,6 +45,24 @@ export async function setSessionStatusAction(formData: FormData): Promise<void> 
   });
 }
 
+/**
+ * Retarget an existing session's goal. Safe to expose because the roster no
+ * longer pairs a member's name with a comparison against this value — see
+ * PHASES.md deviation 28. Before that change, a freely movable goal plus a
+ * per-name badge was a binary search for anyone's reading position.
+ */
+export async function updateSessionGoalAction(formData: FormData): Promise<void> {
+  const seriesId = str(formData, "seriesId");
+  const viewer = await getRequestViewer(seriesId);
+  await runAndRedirect(`/series/${seriesId}/sessions`, async () => {
+    const goalSectionId = optStr(formData, "goalSectionId");
+    // updateSession truthy-checks the goal, so an empty value would silently
+    // no-op rather than tell the user nothing happened.
+    if (!goalSectionId) throw new AppError("Choose a goal section");
+    await updateSession(viewer, str(formData, "sessionId"), { goalSectionId });
+  });
+}
+
 export async function deleteSessionAction(formData: FormData): Promise<void> {
   const seriesId = str(formData, "seriesId");
   const viewer = await getRequestViewer(seriesId);

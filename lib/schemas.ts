@@ -146,6 +146,111 @@ export const progressSchema = z.object({
   sectionId: z.string().nullable(),
 });
 
+// ---------- templates ----------
+
+export const fieldTypeSchema = z.enum([
+  "TEXT",
+  "RICHTEXT",
+  "NUMBER",
+  "INWORLD_DATE",
+  "SELECT",
+  "MULTISELECT",
+  "CARD_REF",
+  "IMAGE_URL",
+]);
+
+export const defaultRevealBehaviorSchema = z.enum(["CARD", "SERIES_START"]);
+
+const choicesSchema = z.object({ choices: z.array(z.string().min(1).max(120)) }).nullable();
+
+export const templateFieldCreateSchema = z.object({
+  // `key` is the stable identifier and is immutable after creation, so it is
+  // constrained to a safe slug rather than free text.
+  key: z
+    .string()
+    .min(1)
+    .max(60)
+    .regex(
+      /^[a-z][a-z0-9_]*$/,
+      "lowercase letters, digits and underscores; must start with a letter",
+    ),
+  label: z.string().min(1).max(120),
+  fieldType: fieldTypeSchema,
+  options: choicesSchema.optional(),
+  required: z.boolean().optional(),
+  defaultRevealBehavior: defaultRevealBehaviorSchema.optional(),
+});
+
+export const templateFieldUpdateSchema = z.object({
+  label: z.string().min(1).max(120).optional(),
+  required: z.boolean().optional(),
+  defaultRevealBehavior: defaultRevealBehaviorSchema.optional(),
+  fieldType: fieldTypeSchema.optional(),
+  options: choicesSchema.optional(),
+});
+
+// ---------- calendar ----------
+
+export const calendarCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  epochLabel: z.string().max(120).nullable().optional(),
+  daysPerWeek: z.number().int().min(1).max(31),
+  weekdayNames: z.array(z.string().min(1).max(60)),
+});
+
+export const calendarWeekSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  epochLabel: z.string().max(120).nullable().optional(),
+  daysPerWeek: z.number().int().min(1).max(31),
+  weekdayNames: z.array(z.string().min(1).max(60)),
+});
+
+export const eraSchema = z.object({
+  name: z.string().min(1).max(120),
+  abbreviation: z.string().min(1).max(12),
+  yearOffset: z.number().int(),
+});
+
+export const monthSchema = z.object({
+  name: z.string().min(1).max(120),
+  dayCount: z.number().int().min(1).max(999),
+});
+
+// ---------- api tokens ----------
+
+export const apiTokenSchema = z.object({ label: z.string().min(1).max(120) });
+
+// ---------- api v1 (query params + bodies; SPEC requires Zod on all input) ----------
+
+export const apiListQuerySchema = z.object({
+  type: cardTypeSchema.optional(),
+  cursor: z.string().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const apiSearchQuerySchema = z.object({
+  q: z.string().min(1).max(200),
+  cursor: z.string().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const apiTimelineQuerySchema = z.object({
+  maxRevealIndex: z.coerce.number().int().min(0).optional(),
+  cursor: z.string().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const apiGraphQuerySchema = z.object({
+  type: cardTypeSchema.optional(),
+  nodeLimit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export const apiSetFieldSchema = z.object({
+  templateFieldId: z.string().min(1),
+  value: z.unknown(),
+  revealSectionId: z.string().min(1).optional(),
+});
+
 // ---------- per-fieldType value validation ----------
 
 const tiptapDocSchema = z.object({ type: z.literal("doc") }).passthrough();

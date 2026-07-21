@@ -3,6 +3,7 @@ import {
   createSessionAction,
   deleteSessionAction,
   setSessionStatusAction,
+  updateSessionGoalAction,
 } from "@/app/actions/sessions";
 import { SectionSelect } from "@/components/cards/section-select";
 import { ErrorNote } from "@/components/error-note";
@@ -14,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { getRequestViewer } from "@/lib/auth-helpers";
-import { listMembers } from "@/lib/services/memberships";
+import { getRosterAnalytics, listMembers } from "@/lib/services/memberships";
 import { listSessions, listSectionOptions } from "@/lib/visibility";
 import { TiptapContent } from "@/lib/tiptap-render";
 
@@ -35,10 +36,11 @@ export default async function SessionsPage({
   const { seriesId } = await params;
   const { error } = await searchParams;
   const viewer = await getRequestViewer(seriesId);
-  const [sessions, members, options] = await Promise.all([
+  const [sessions, members, options, analytics] = await Promise.all([
     listSessions(viewer),
     listMembers(viewer),
     listSectionOptions(viewer),
+    getRosterAnalytics(viewer),
   ]);
   const isEditor = viewer.role !== "READER";
 
@@ -99,6 +101,24 @@ export default async function SessionsPage({
                 {s.goalSection.title ? ` — ${s.goalSection.title}` : ""}
               </span>
             </p>
+            {isEditor && (
+              <form
+                action={updateSessionGoalAction}
+                className="mb-2 flex flex-wrap items-end gap-1.5"
+              >
+                <input type="hidden" name="seriesId" value={seriesId} />
+                <input type="hidden" name="sessionId" value={s.id} />
+                <SectionSelect
+                  name="goalSectionId"
+                  options={options}
+                  defaultValue={s.goalSection.id}
+                  required
+                />
+                <Button variant="outline" size="sm">
+                  Move goal
+                </Button>
+              </form>
+            )}
             {s.scheduledAt && (
               <p className="mb-1 text-xs text-soft">Scheduled {s.scheduledAt.toLocaleString()}</p>
             )}
@@ -109,22 +129,36 @@ export default async function SessionsPage({
 
       <Panel className="mb-4">
         <h2 className="mb-2 text-lg">Roster</h2>
+
+        {analytics.goalRevealIndex === null ? (
+          <p className="mb-2 text-sm text-soft">
+            No active session — pacing is measured against the active session&apos;s goal.
+          </p>
+        ) : (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+            {(["behind", "at_goal", "ahead"] as const).map((k) => (
+              <span key={k} className={`rounded-full px-2 py-0.5 text-[11px] ${STATE_CLASS[k]}`}>
+                <span className="tnum font-medium">{analytics.counts[k]}</span> {STATE_LABEL[k]}
+              </span>
+            ))}
+            <span className="tnum text-[11px] text-soft">
+              of {analytics.totalMembers} member{analytics.totalMembers === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
+
         <ul className="space-y-1">
           {members.map((m) => (
             <li key={m.userId} className="flex items-center gap-2 text-sm">
               <span>{m.name}</span>
               <span className="text-[11px] uppercase text-soft">{m.role.toLowerCase()}</span>
-              {m.state && (
-                <span className={`rounded-full px-2 py-0.5 text-[11px] ${STATE_CLASS[m.state]}`}>
-                  {STATE_LABEL[m.state]}
-                </span>
-              )}
             </li>
           ))}
         </ul>
         <p className="mt-2 text-[11px] text-soft">
-          States compare each member to the active session goal. Exact positions are never shown —
-          that&apos;s each reader&apos;s business.
+          Pacing is shown as counts only, never per member. How far someone has read is their
+          business — and because the goal can be moved at will, a per-name badge would let it be
+          narrowed down by moving the goal and watching who changes.
         </p>
       </Panel>
 

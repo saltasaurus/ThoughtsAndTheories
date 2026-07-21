@@ -71,36 +71,76 @@ export type MemberRosterEntry = {
   userId: string;
   name: string;
   role: Role;
-  /** vs the active session goal; null when no session is active */
-  state: "behind" | "at_goal" | "ahead" | null;
 };
 
 /**
- * Roster shows STATE only — never another member's exact position, which is
- * their business. The viewer's own revealIndex comes from their Viewer context.
+ * Roster shows identity and role only — never a member's position, and never a
+ * comparison against one.
+ *
+ * A per-member "behind / at goal / ahead" badge used to live here. It was a
+ * single comparison of a NAMED member against the active session's goal, which
+ * reads as harmless — but an EDITOR may retarget that goal freely, so repeating
+ * the observation binary-searches anyone's exact position in ~log2(sections)
+ * reloads. Granularity was never the issue: ANY per-name comparison against a
+ * movable threshold is searchable, so coarsening the badge would have fixed
+ * nothing. Removing the name/threshold pairing is what closes it — and it is
+ * what keeps session goals freely movable, which is the more useful capability.
+ *
+ * Pacing is still reported, in aggregate, by getRosterAnalytics below.
  */
 export async function listMembers(viewer: Viewer): Promise<MemberRosterEntry[]> {
+  const members = await prisma.membership.findMany({
+    where: { seriesId: viewer.seriesId },
+    include: { user: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  return members.map((m) => ({
+    userId: m.user.id,
+    name: m.user.name,
+    role: m.role,
+  }));
+}
+
+export type RosterAnalytics = {
+  totalMembers: number;
+  /** null when no session is active — there is no goal to measure against */
+  goalRevealIndex: number | null;
+  counts: { behind: number; at_goal: number; ahead: number };
+};
+
+/**
+ * Aggregate pacing against the ACTIVE session's goal — counts only.
+ *
+ * Deliberately returns no userId and no revealIndex: pairing a member with a
+ * position is exactly what the roster rule forbids. There is also no
+ * per-past-session breakdown, because memberships are not revisioned — the only
+ * position data that exists is the current one, and scoring it against old
+ * goals would manufacture a monotone "everyone drifts ahead" artifact rather
+ * than history.
+ */
+export async function getRosterAnalytics(viewer: Viewer): Promise<RosterAnalytics> {
   const [members, active] = await Promise.all([
     prisma.membership.findMany({
       where: { seriesId: viewer.seriesId },
-      include: { user: { select: { id: true, name: true } } },
-      orderBy: { createdAt: "asc" },
+      select: { revealIndex: true },
     }),
     prisma.clubSession.findFirst({
       where: { seriesId: viewer.seriesId, status: "ACTIVE", deletedAt: null },
       select: { goalRevealIndex: true },
     }),
   ]);
-  return members.map((m) => ({
-    userId: m.user.id,
-    name: m.user.name,
-    role: m.role,
-    state: active
-      ? m.revealIndex < active.goalRevealIndex
-        ? "behind"
-        : m.revealIndex === active.goalRevealIndex
-          ? "at_goal"
-          : "ahead"
-      : null,
-  }));
+
+  const counts = { behind: 0, at_goal: 0, ahead: 0 };
+  if (active) {
+    for (const m of members) {
+      if (m.revealIndex < active.goalRevealIndex) counts.behind++;
+      else if (m.revealIndex === active.goalRevealIndex) counts.at_goal++;
+      else counts.ahead++;
+    }
+  }
+  return {
+    totalMembers: members.length,
+    goalRevealIndex: active?.goalRevealIndex ?? null,
+    counts,
+  };
 }

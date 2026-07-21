@@ -22,14 +22,19 @@ export async function setProgressAction(formData: FormData): Promise<void> {
 /** One-click "jump to session goal". */
 export async function jumpToGoalAction(formData: FormData): Promise<void> {
   const seriesId = str(formData, "seriesId");
-  const user = await requireUser();
+  // Membership is resolved BEFORE the session lookup. Querying first and
+  // letting setOwnProgress reject afterwards made the two failures
+  // distinguishable ("No active session" vs "Not a member of this series"),
+  // which told any logged-in user whether a guessed series id was real and
+  // currently running a session — exactly what getViewer's 404 exists to deny.
+  const viewer = await getRequestViewer(seriesId);
   await runAndRedirect(backTo(formData, seriesId), async () => {
     const active = await prisma.clubSession.findFirst({
       where: { seriesId, status: "ACTIVE", deletedAt: null },
       select: { goalSectionId: true },
     });
     if (!active) throw new NotFoundError("No active session");
-    await setOwnProgress(user.id, seriesId, active.goalSectionId);
+    await setOwnProgress(viewer.userId, seriesId, active.goalSectionId);
   });
 }
 
