@@ -1,6 +1,5 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { importSeriesAction } from "@/app/actions/export-import";
 import { createInviteAction, revokeInviteAction } from "@/app/actions/invites";
 import { lowerMemberAction } from "@/app/actions/progress";
 import { createTokenAction, dismissTokenAction, revokeTokenAction } from "@/app/actions/tokens";
@@ -130,8 +129,18 @@ export default async function SettingsPage({
                   <form action={lowerMemberAction} className="flex items-center gap-1.5">
                     <input type="hidden" name="seriesId" value={seriesId} />
                     <input type="hidden" name="userId" value={m.userId} />
-                    <SectionSelect name="sectionId" options={options} emptyLabel="series start" />
-                    <Button variant="outline" size="sm" title="Progress can only be lowered — it's a claim about what they've read">
+                    <SectionSelect
+                      name="sectionId"
+                      options={options}
+                      emptyLabel="series start"
+                      ariaLabel={`Set ${m.name}'s position back to`}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Lower ${m.name}'s progress`}
+                      title="Progress can only be lowered — it's a claim about what they've read"
+                    >
                       Lower
                     </Button>
                   </form>
@@ -176,8 +185,25 @@ export default async function SettingsPage({
         <form action={createTokenAction} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="seriesId" value={seriesId} />
           <div>
-            <Label>Label</Label>
-            <Input name="label" placeholder="laptop script" className="w-52" required />
+            <Label htmlFor="token-label">Label</Label>
+            <Input
+              id="token-label"
+              name="label"
+              placeholder="laptop script"
+              className="w-52"
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="token-scope">Access</Label>
+            <Select id="token-scope" name="scope" defaultValue="READ" className="w-36">
+              <option value="READ">read only</option>
+              <option value="WRITE">read and write</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="token-expires">Expires (optional)</Label>
+            <Input id="token-expires" name="expiresAt" type="datetime-local" className="w-52" />
           </div>
           <Button type="submit">Create token</Button>
         </form>
@@ -187,18 +213,24 @@ export default async function SettingsPage({
             {tokens.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="w-44">{t.label}</span>
+                <span className="rounded-full border border-line px-2 py-0.5 text-[11px] uppercase text-soft">
+                  {t.scope === "WRITE" ? "read/write" : "read only"}
+                </span>
                 <span className="text-[11px] text-soft">
                   {t.revokedAt
                     ? "revoked"
-                    : t.lastUsedAt
-                      ? `last used ${t.lastUsedAt.toLocaleDateString()}`
-                      : "never used"}
+                    : t.expiresAt && t.expiresAt <= new Date()
+                      ? "expired"
+                      : t.lastUsedAt
+                        ? `last used ${t.lastUsedAt.toLocaleDateString()}`
+                        : "never used"}
+                  {t.expiresAt && !t.revokedAt && ` · expires ${t.expiresAt.toLocaleDateString()}`}
                 </span>
                 {!t.revokedAt && (
                   <form action={revokeTokenAction}>
                     <input type="hidden" name="seriesId" value={seriesId} />
                     <input type="hidden" name="tokenId" value={t.id} />
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" aria-label={`Revoke token ${t.label}`}>
                       Revoke
                     </Button>
                   </form>
@@ -229,11 +261,18 @@ export default async function SettingsPage({
             >
               Download JSON
             </a>
-            <form action={importSeriesAction} className="flex flex-wrap items-end gap-2">
-              <input type="hidden" name="seriesId" value={seriesId} />
+            {/* Posts to a route handler, not a Server Action: actions cap the
+                body at 1 MB, which would reject the very exports this produces. */}
+            <form
+              method="post"
+              action={`/series/${seriesId}/import`}
+              encType="multipart/form-data"
+              className="flex flex-wrap items-end gap-2"
+            >
               <div>
-                <Label>Import a series file</Label>
+                <Label htmlFor="import-file">Import a series file</Label>
                 <input
+                  id="import-file"
                   type="file"
                   name="file"
                   accept="application/json,.json"

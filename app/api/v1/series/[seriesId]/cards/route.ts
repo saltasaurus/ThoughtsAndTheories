@@ -1,9 +1,11 @@
 import {
   errorResponse,
+  getApiContext,
   getViewerFromToken,
   json,
   jsonBody,
   parseInput,
+  requireWriteScope,
   searchParams,
 } from "@/lib/api";
 import { apiListQuerySchema, cardCreateSchema } from "@/lib/schemas";
@@ -28,11 +30,16 @@ export async function GET(request: Request, { params }: Ctx) {
   }
 }
 
-/** Writes reuse the same service the Server Actions call; it enforces EDITOR. */
+/**
+ * Writes reuse the same service the Server Actions call; it enforces EDITOR.
+ * The scope check is additional, not a substitute: a READ token belonging to an
+ * OWNER still cannot write.
+ */
 export async function POST(request: Request, { params }: Ctx) {
   try {
     const { seriesId } = await params;
-    const viewer = await getViewerFromToken(request, seriesId);
+    const { viewer, scope } = await getApiContext(request, seriesId);
+    requireWriteScope(scope);
     const input = parseInput(cardCreateSchema, await jsonBody(request));
     const id = await createCard(viewer, input);
     return json({ id }, 201);

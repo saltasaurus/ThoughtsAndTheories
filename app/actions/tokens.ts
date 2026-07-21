@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { parseOr400, runAndRedirect, str } from "@/lib/action-run";
+import { optStr, parseOr400, runAndRedirect, str } from "@/lib/action-run";
 import { requireUser } from "@/lib/auth-helpers";
 import { apiTokenSchema } from "@/lib/schemas";
 import { NEW_TOKEN_COOKIE, createApiToken, revokeApiToken } from "@/lib/services/api-tokens";
@@ -11,8 +11,12 @@ export async function createTokenAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const seriesId = str(formData, "seriesId");
   await runAndRedirect(`/series/${seriesId}/settings`, async () => {
-    const { label } = parseOr400(apiTokenSchema, { label: str(formData, "label").trim() });
-    const created = await createApiToken(user.id, label);
+    const { label, scope, expiresAt } = parseOr400(apiTokenSchema, {
+      label: str(formData, "label").trim(),
+      scope: str(formData, "scope") || "READ",
+      expiresAt: optStr(formData, "expiresAt") ?? null,
+    });
+    const created = await createApiToken(user.id, label, { scope, expiresAt });
     (await cookies()).set(NEW_TOKEN_COOKIE, created.token, {
       httpOnly: true,
       sameSite: "lax",

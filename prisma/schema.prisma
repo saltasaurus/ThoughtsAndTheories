@@ -418,12 +418,22 @@ model Invite {
 // lookup key) but wrong here: a salted hash isn't queryable, forcing a
 // full-table compare scan per request. The token has no low-entropy preimage to
 // protect, so a fast hash loses nothing.
+// Least privilege: a token is READ unless it was deliberately minted to write.
+// The default matters — an existing token that predates this column becomes
+// read-only rather than silently retaining write power.
+enum ApiTokenScope {
+  READ
+  WRITE
+}
+
 model ApiToken {
-  id         String    @id @default(cuid())
+  id         String        @id @default(cuid())
   userId     String
   label      String
-  tokenHash  String    @unique
-  createdAt  DateTime  @default(now())
+  tokenHash  String        @unique
+  scope      ApiTokenScope @default(READ)
+  expiresAt  DateTime?
+  createdAt  DateTime      @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
 

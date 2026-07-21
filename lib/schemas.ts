@@ -218,7 +218,12 @@ export const monthSchema = z.object({
 
 // ---------- api tokens ----------
 
-export const apiTokenSchema = z.object({ label: z.string().min(1).max(120) });
+export const apiTokenSchema = z.object({
+  label: z.string().min(1).max(120),
+  /** default READ — least privilege, and a leaked read token cannot rewrite */
+  scope: z.enum(["READ", "WRITE"]).default("READ"),
+  expiresAt: z.coerce.date().nullable().optional(),
+});
 
 // ---------- api v1 (query params + bodies; SPEC requires Zod on all input) ----------
 

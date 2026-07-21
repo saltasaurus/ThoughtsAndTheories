@@ -87,8 +87,15 @@ export default async function SessionsPage({
                   <form action={deleteSessionAction}>
                     <input type="hidden" name="seriesId" value={seriesId} />
                     <input type="hidden" name="sessionId" value={s.id} />
-                    <Button variant="ghost" size="sm" title="Delete session">
-                      <Trash2 className="size-3" />
+                    {/* Icon-only: without aria-label a screen reader announces
+                        nothing at all for this button. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Delete session ${s.title}`}
+                      title="Delete session"
+                    >
+                      <Trash2 className="size-3" aria-hidden="true" />
                     </Button>
                   </form>
                 </div>
@@ -112,9 +119,10 @@ export default async function SessionsPage({
                   name="goalSectionId"
                   options={options}
                   defaultValue={s.goalSection.id}
+                  ariaLabel={`Goal section for ${s.title}`}
                   required
                 />
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" aria-label={`Move goal for ${s.title}`}>
                   Move goal
                 </Button>
               </form>

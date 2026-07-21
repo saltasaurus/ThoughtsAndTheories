@@ -115,12 +115,20 @@ export default async function TemplatesPage({
                       <Button size="sm">Save</Button>
                     </form>
 
+                    {/* The glyph is decorative: the accessible name has to come
+                        from aria-label, since "↑" reads as "up arrow". */}
                     <form action={moveFieldAction}>
                       <input type="hidden" name="seriesId" value={seriesId} />
                       <input type="hidden" name="fieldId" value={f.id} />
                       <input type="hidden" name="direction" value="up" />
-                      <Button variant="outline" size="sm" disabled={i === 0} title="Move up">
-                        ↑
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={i === 0}
+                        aria-label={`Move ${f.label} up`}
+                        title="Move up"
+                      >
+                        <span aria-hidden="true">↑</span>
                       </Button>
                     </form>
                     <form action={moveFieldAction}>
@@ -131,9 +139,10 @@ export default async function TemplatesPage({
                         variant="outline"
                         size="sm"
                         disabled={i === t.fields.length - 1}
+                        aria-label={`Move ${f.label} down`}
                         title="Move down"
                       >
-                        ↓
+                        <span aria-hidden="true">↓</span>
                       </Button>
                     </form>
                     <form action={retireFieldAction}>
@@ -142,6 +151,7 @@ export default async function TemplatesPage({
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label={`Retire ${f.label}`}
                         title="Hide from card forms; stored values are kept"
                       >
                         Retire
@@ -212,7 +222,7 @@ export default async function TemplatesPage({
                     <form action={restoreFieldAction}>
                       <input type="hidden" name="seriesId" value={seriesId} />
                       <input type="hidden" name="fieldId" value={r.id} />
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" aria-label={`Restore ${r.label}`}>
                         Restore
                       </Button>
                     </form>

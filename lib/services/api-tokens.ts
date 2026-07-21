@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { ApiTokenScope } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/lib/errors";
 
@@ -35,11 +36,25 @@ export type NewApiToken = { id: string; label: string; token: string };
  * Tokens are scoped to the USER, not a series: a token carries exactly the
  * memberships its owner already has, so it can never reach a series its owner
  * could not open in the UI. Any member may mint one for themselves.
+ *
+ * Scope defaults to READ — most consumers of a wiki only read, and a leaked
+ * read token cannot rewrite anyone's series. Expiry is optional but encouraged;
+ * a token with no expiry lives until it is revoked by hand.
  */
-export async function createApiToken(userId: string, label: string): Promise<NewApiToken> {
+export async function createApiToken(
+  userId: string,
+  label: string,
+  opts: { scope?: ApiTokenScope; expiresAt?: Date | null } = {},
+): Promise<NewApiToken> {
   const token = mintToken();
   const row = await prisma.apiToken.create({
-    data: { userId, label, tokenHash: hashToken(token) },
+    data: {
+      userId,
+      label,
+      tokenHash: hashToken(token),
+      scope: opts.scope ?? "READ",
+      expiresAt: opts.expiresAt ?? null,
+    },
     select: { id: true, label: true },
   });
   return { id: row.id, label: row.label, token };
@@ -58,6 +73,8 @@ export async function revokeApiToken(userId: string, tokenId: string): Promise<v
 export type ApiTokenView = {
   id: string;
   label: string;
+  scope: ApiTokenScope;
+  expiresAt: Date | null;
   createdAt: Date;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
@@ -67,7 +84,15 @@ export type ApiTokenView = {
 export async function listApiTokens(userId: string): Promise<ApiTokenView[]> {
   return prisma.apiToken.findMany({
     where: { userId },
-    select: { id: true, label: true, createdAt: true, lastUsedAt: true, revokedAt: true },
+    select: {
+      id: true,
+      label: true,
+      scope: true,
+      expiresAt: true,
+      createdAt: true,
+      lastUsedAt: true,
+      revokedAt: true,
+    },
     orderBy: { createdAt: "desc" },
   });
 }

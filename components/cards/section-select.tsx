@@ -8,6 +8,8 @@ export function SectionSelect({
   defaultValue,
   emptyLabel,
   required,
+  id,
+  ariaLabel,
 }: {
   name: string;
   options: SectionOption[];
@@ -15,9 +17,18 @@ export function SectionSelect({
   /** when set, an empty first option with this label is offered */
   emptyLabel?: string;
   required?: boolean;
+  id?: string;
+  /** for repeated in-row pickers, which have no visible <label> of their own */
+  ariaLabel?: string;
 }) {
   return (
-    <Select name={name} defaultValue={defaultValue ?? ""} required={required}>
+    <Select
+      id={id}
+      name={name}
+      defaultValue={defaultValue ?? ""}
+      required={required}
+      aria-label={ariaLabel}
+    >
       {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
       {options.map((o) => (
         <option key={o.id} value={o.id}>

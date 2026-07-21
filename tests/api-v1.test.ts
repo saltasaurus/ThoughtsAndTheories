@@ -7,6 +7,7 @@ import { GET as cardsGET, POST as cardsPOST } from "@/app/api/v1/series/[seriesI
 import { GET as searchGET } from "@/app/api/v1/series/[seriesId]/search/route";
 import { GET as timelineGET } from "@/app/api/v1/series/[seriesId]/timeline/route";
 import { prisma } from "@/lib/db";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { createApiToken, revokeApiToken } from "@/lib/services/api-tokens";
 import { getViewer, listCards } from "@/lib/visibility";
 import { createFixture, makeCard, type Fixture } from "@/tests/fixture";
@@ -31,6 +32,7 @@ describe("api v1 — token authentication", () => {
   let readerToken: string;
 
   beforeAll(async () => {
+    resetRateLimits(); // the API limiter is process state shared across suites
     f = await createFixture();
     readerToken = (await createApiToken(f.reader.id, "test")).token;
   });
@@ -82,6 +84,7 @@ describe("api v1 — gating is byte-identical to the UI", () => {
   let visibleId: string;
 
   beforeAll(async () => {
+    resetRateLimits(); // the API limiter is process state shared across suites
     f = await createFixture();
     readerToken = (await createApiToken(f.reader.id, "reader")).token;
     visibleId = (
@@ -179,9 +182,12 @@ describe("api v1 — writes reuse the service layer's roles", () => {
   let readerToken: string;
 
   beforeAll(async () => {
+    resetRateLimits(); // the API limiter is process state shared across suites
     f = await createFixture();
-    editorToken = (await createApiToken(f.editor.id, "editor")).token;
-    readerToken = (await createApiToken(f.reader.id, "reader")).token;
+    // WRITE scope on both, so these tests exercise ROLE enforcement rather
+    // than tripping the scope check first. Scope is covered separately below.
+    editorToken = (await createApiToken(f.editor.id, "editor", { scope: "WRITE" })).token;
+    readerToken = (await createApiToken(f.reader.id, "reader", { scope: "WRITE" })).token;
   });
 
   it("lets an EDITOR token create a card", async () => {
@@ -236,6 +242,68 @@ describe("api v1 — writes reuse the service layer's roles", () => {
       ctx({ seriesId: f.seriesId }),
     );
     expect(res.status).toBe(400);
+  });
+
+  it("403s a READ-scoped token on a write, even for an OWNER", async () => {
+    // Least privilege: the role would allow this write; the token does not.
+    const readOnly = (await createApiToken(f.owner.id, "read only", { scope: "READ" })).token;
+    const res = await cardsPOST(
+      req(`/series/${f.seriesId}/cards`, readOnly, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "LOCATION",
+          title: "Blocked by scope",
+          revealSectionId: f.sections[0]!.id,
+          fields: [],
+        }),
+      }),
+      ctx({ seriesId: f.seriesId }),
+    );
+    expect(res.status).toBe(403);
+    expect(await prisma.card.findFirst({ where: { title: "Blocked by scope" } })).toBeNull();
+  });
+
+  it("still lets a READ-scoped token read", async () => {
+    const readOnly = (await createApiToken(f.owner.id, "reader scope", { scope: "READ" })).token;
+    const res = await cardsGET(
+      req(`/series/${f.seriesId}/cards`, readOnly),
+      ctx({ seriesId: f.seriesId }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("401s an expired token, indistinguishably from an unknown one", async () => {
+    const { token } = await createApiToken(f.owner.id, "expired", {
+      scope: "WRITE",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const expired = await cardsGET(
+      req(`/series/${f.seriesId}/cards`, token),
+      ctx({ seriesId: f.seriesId }),
+    );
+    const unknown = await cardsGET(
+      req(`/series/${f.seriesId}/cards`, "tt_nope"),
+      ctx({ seriesId: f.seriesId }),
+    );
+    expect(expired.status).toBe(401);
+    expect(await expired.json()).toEqual(await unknown.json()); // same message
+  });
+
+  it("defaults new tokens to READ — an unspecified scope must not grant writes", async () => {
+    const { token } = await createApiToken(f.owner.id, "default scope");
+    const res = await cardsPOST(
+      req(`/series/${f.seriesId}/cards`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "ITEM",
+          title: "Default scope write",
+          revealSectionId: f.sections[0]!.id,
+          fields: [],
+        }),
+      }),
+      ctx({ seriesId: f.seriesId }),
+    );
+    expect(res.status).toBe(403);
   });
 
   it("lets an EDITOR token patch a card", async () => {

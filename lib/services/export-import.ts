@@ -561,42 +561,43 @@ export async function importSeries(userId: string, file: SeriesExport): Promise<
         }
       }
 
-      for (const r of file.relations) {
-        await tx.cardRelation.create({
-          data: {
-            fromCardId: need(cardIds, r.fromCardKey, "card"),
-            toCardId: need(cardIds, r.toCardKey, "card"),
-            type: r.type,
-            weight: r.weight,
-            directed: r.directed,
-            notes: r.notes,
-            revealSectionId: need(sectionIds, r.revealSectionKey, "section"),
-            revealIndex: 0,
-            deletedAt: date(r.deletedAt),
-          },
-        });
-      }
+      // Relations and timeline entries need no id mapped back out, so they go
+      // in as batches. One round trip instead of one per row keeps a large
+      // import well inside the transaction timeout — and shortens how long the
+      // whole thing holds locks. (Cards and their fields still insert per row,
+      // because the card's generated id is what the field rows hang off.)
+      await tx.cardRelation.createMany({
+        data: file.relations.map((r) => ({
+          fromCardId: need(cardIds, r.fromCardKey, "card"),
+          toCardId: need(cardIds, r.toCardKey, "card"),
+          type: r.type,
+          weight: r.weight,
+          directed: r.directed,
+          notes: r.notes,
+          revealSectionId: need(sectionIds, r.revealSectionKey, "section"),
+          revealIndex: 0,
+          deletedAt: date(r.deletedAt),
+        })),
+      });
 
-      for (const t of file.timeline) {
-        await tx.timelineEntry.create({
-          data: {
-            seriesId: series.id,
-            cardId: t.cardKey ? need(cardIds, t.cardKey, "card") : null,
-            label: t.label,
-            description: t.description,
-            revealSectionId: need(sectionIds, t.revealSectionKey, "section"),
-            revealIndex: 0,
-            eraId: t.eraKey ? need(eraIds, t.eraKey, "era") : null,
-            year: t.year,
-            monthOrder: t.monthOrder,
-            day: t.day,
-            precision: t.precision,
-            displayOverride: t.displayOverride,
-            manualSortKey: t.manualSortKey,
-            deletedAt: date(t.deletedAt),
-          },
-        });
-      }
+      await tx.timelineEntry.createMany({
+        data: file.timeline.map((t) => ({
+          seriesId: series.id,
+          cardId: t.cardKey ? need(cardIds, t.cardKey, "card") : null,
+          label: t.label,
+          description: t.description,
+          revealSectionId: need(sectionIds, t.revealSectionKey, "section"),
+          revealIndex: 0,
+          eraId: t.eraKey ? need(eraIds, t.eraKey, "era") : null,
+          year: t.year,
+          monthOrder: t.monthOrder,
+          day: t.day,
+          precision: t.precision,
+          displayOverride: t.displayOverride,
+          manualSortKey: t.manualSortKey,
+          deletedAt: date(t.deletedAt),
+        })),
+      });
 
       // Derived state, rebuilt from the FKs that are the source of truth.
       await recomputeSeriesPositions(series.id, tx);

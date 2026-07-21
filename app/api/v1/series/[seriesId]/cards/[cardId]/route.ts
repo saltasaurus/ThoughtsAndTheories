@@ -1,4 +1,12 @@
-import { errorResponse, getViewerFromToken, json, jsonBody, parseInput } from "@/lib/api";
+import {
+  errorResponse,
+  getApiContext,
+  getViewerFromToken,
+  json,
+  jsonBody,
+  parseInput,
+  requireWriteScope,
+} from "@/lib/api";
 import { apiSetFieldSchema, cardUpdateSchema } from "@/lib/schemas";
 import { setCardField, updateCard } from "@/lib/services/cards";
 import { getCardDetail } from "@/lib/visibility";
@@ -25,7 +33,8 @@ export async function GET(request: Request, { params }: Ctx) {
 export async function PATCH(request: Request, { params }: Ctx) {
   try {
     const { seriesId, cardId } = await params;
-    const viewer = await getViewerFromToken(request, seriesId);
+    const { viewer, scope } = await getApiContext(request, seriesId);
+    requireWriteScope(scope);
     const patch = parseInput(cardUpdateSchema, await jsonBody(request));
     await updateCard(viewer, cardId, patch);
     return json({ ok: true });
@@ -38,7 +47,8 @@ export async function PATCH(request: Request, { params }: Ctx) {
 export async function PUT(request: Request, { params }: Ctx) {
   try {
     const { seriesId, cardId } = await params;
-    const viewer = await getViewerFromToken(request, seriesId);
+    const { viewer, scope } = await getApiContext(request, seriesId);
+    requireWriteScope(scope);
     const input = parseInput(apiSetFieldSchema, await jsonBody(request));
     await setCardField(viewer, cardId, input.templateFieldId, {
       value: input.value,

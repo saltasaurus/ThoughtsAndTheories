@@ -1,7 +1,9 @@
+import type { ApiTokenScope } from "@prisma/client";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
+import { LIMITS, clientIpFrom, rateLimit } from "@/lib/rate-limit";
 import { hashToken } from "@/lib/services/api-tokens";
 import { getViewer, type Viewer } from "@/lib/visibility";
 
@@ -73,17 +75,56 @@ export async function jsonBody(request: Request): Promise<unknown> {
  *         getViewer; a 403 would confirm the series exists)
  * Tokens never carry spoiler peek — no peek parameter exists in this surface.
  */
-export async function getViewerFromToken(request: Request, seriesId: string): Promise<Viewer> {
+export type ApiContext = { viewer: Viewer; scope: ApiTokenScope };
+
+/** Rate-limit budget shared by every /api/v1 route, keyed on the client address. */
+function throttle(request: Request): void {
+  rateLimit(`api:ip:${clientIpFrom(request)}`, LIMITS.api.limit, LIMITS.api.windowMs);
+}
+
+export async function getApiContext(request: Request, seriesId: string): Promise<ApiContext> {
+  throttle(request);
+
   const header = request.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   if (!match?.[1]) throw new AppError("Missing bearer token", 401);
 
   const token = await prisma.apiToken.findUnique({
     where: { tokenHash: hashToken(match[1]) },
-    select: { id: true, userId: true, revokedAt: true },
+    select: {
+      id: true,
+      userId: true,
+      scope: true,
+      revokedAt: true,
+      expiresAt: true,
+      lastUsedAt: true,
+    },
   });
-  if (!token || token.revokedAt !== null) throw new AppError("Invalid or revoked token", 401);
+  // One message for unknown, revoked and expired alike — distinguishing them
+  // would confirm that a guessed token once existed.
+  const now = new Date();
+  if (!token || token.revokedAt !== null || (token.expiresAt !== null && token.expiresAt <= now)) {
+    throw new AppError("Invalid, revoked or expired token", 401);
+  }
 
-  await prisma.apiToken.update({ where: { id: token.id }, data: { lastUsedAt: new Date() } });
-  return getViewer(token.userId, seriesId, false);
+  // lastUsedAt is a coarse "is this still in use?" signal, not an audit log.
+  // Writing it on EVERY request put a row lock in the path of every read, so
+  // concurrent calls sharing a token serialised on it. Hourly is plenty.
+  if (token.lastUsedAt === null || now.getTime() - token.lastUsedAt.getTime() > 3_600_000) {
+    await prisma.apiToken.update({ where: { id: token.id }, data: { lastUsedAt: now } });
+  }
+
+  return { viewer: await getViewer(token.userId, seriesId, false), scope: token.scope };
+}
+
+/** Read-only tokens may not reach a mutation, whatever the user's role allows. */
+export function requireWriteScope(scope: ApiTokenScope): void {
+  if (scope !== "WRITE") {
+    throw new AppError("This token is read-only", 403);
+  }
+}
+
+/** Reads only need the viewer; keeps the common case a one-liner. */
+export async function getViewerFromToken(request: Request, seriesId: string): Promise<Viewer> {
+  return (await getApiContext(request, seriesId)).viewer;
 }

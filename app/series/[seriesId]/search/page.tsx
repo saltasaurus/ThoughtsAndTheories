@@ -11,12 +11,12 @@ export default async function SearchPage({
   searchParams,
 }: {
   params: Promise<{ seriesId: string }>;
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; cursor?: string }>;
 }) {
   const { seriesId } = await params;
-  const { q } = await searchParams;
+  const { q, cursor } = await searchParams;
   const viewer = await getRequestViewer(seriesId);
-  const results = q ? await searchCards(viewer, q) : null;
+  const results = q ? await searchCards(viewer, q, { cursor }) : null;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -27,7 +27,7 @@ export default async function SearchPage({
         entirely.
       </p>
       <form className="mb-4 flex gap-2">
-        <Input name="q" defaultValue={q ?? ""} placeholder="Search cards…" />
+        <Input name="q" defaultValue={q ?? ""} placeholder="Search cards…" aria-label="Search cards" />
         <Button type="submit">Search</Button>
       </form>
       {results && (
@@ -46,6 +46,14 @@ export default async function SearchPage({
             </li>
           ))}
         </ul>
+      )}
+      {results?.nextCursor && (
+        <Link
+          href={`/series/${seriesId}/search?q=${encodeURIComponent(q ?? "")}&cursor=${results.nextCursor}`}
+          className="mt-3 inline-block rounded-md border border-line px-3 py-1.5 text-sm hover:border-accent"
+        >
+          More results
+        </Link>
       )}
     </div>
   );

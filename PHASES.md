@@ -182,6 +182,63 @@ decision rather than a patch — the roster position oracle — was decided in
 favour of keeping goals movable and dropping the per-member badge; see hardening
 item 11 and deviation 28.
 
+### Production-readiness pass (public instance / self-hosting)
+
+Aimed at the threat model changing from "friends with the URL" to "reachable
+from the internet". Verified: `tsc --noEmit` clean, `npm test` 134/134,
+`next build` green.
+
+1. **Import could not restore its own exports above 1 MB.** Export is a route
+   handler (no body cap); import was a Server Action, which carries Next's 1 MB
+   `serverActions.bodySizeLimit`. Any series past that exported cleanly and
+   failed to import — a backup that cannot restore. Import is now
+   `app/series/[seriesId]/import/route.ts`, a plain multipart POST with no cap,
+   and `tests/production.test.ts` round-trips a >1 MB export to prove it. The
+   Server Action was deleted, so there is one import path rather than two.
+2. **Rate limiting** (`lib/rate-limit.ts`) on login (per IP *and* per account),
+   registration, invite redemption, and the whole v1 API. bcrypt is deliberately
+   expensive, so an unauthenticated login flood was both credential stuffing and
+   CPU exhaustion; the check now runs before any hash. The client address comes
+   from the LAST `X-Forwarded-For` hop — the one Caddy appends and a client
+   cannot forge — with a regression test, because reading the first hop would
+   make the limiter decorative.
+3. **API tokens gained scopes and expiry.** `scope` defaults to `READ`, so a
+   leaked token cannot write and pre-existing tokens became read-only rather
+   than silently keeping write power. Write routes call `requireWriteScope` in
+   addition to the service's role check: a READ token held by an OWNER is still
+   refused. Unknown, revoked and expired tokens return one identical 401.
+4. **Security headers** in `next.config.ts`: CSP, HSTS, `nosniff`,
+   `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` (URLs carry series
+   ids and `?error=` text, and remote `IMAGE_URL` images would otherwise leak
+   the referring page), and `Cache-Control: no-store` on `/api/*` so no shared
+   proxy caches a viewer-gated response.
+5. **`lastUsedAt` no longer writes on every API request** — it put a row lock in
+   the path of every read, so concurrent calls sharing a token serialised on it.
+   Now hourly, which is all a "still in use?" signal needs.
+6. **Accessibility**: accessible names on every icon- and glyph-only control
+   (the template reorder arrows announced as "up arrow"; the session delete
+   button announced as nothing at all), label association on the new forms, and
+   `aria-label` on the repeated in-row section pickers.
+7. **`/api/health`** — unauthenticated, reports only whether the database
+   answers, wired to a Docker healthcheck. No version or migration state: the
+   one endpoint guaranteed to be exposed must not become a recon surface.
+8. **Search now paginates**, matching cards and timeline, which already did.
+9. **Import batches** relations and timeline entries with `createMany` instead
+   of one INSERT per row, shortening how long the import transaction holds locks.
+10. **`AUTH_SECRET` is now required to start** in the prod compose profile
+    (`${AUTH_SECRET:?...}`) rather than silently booting without it.
+
+**Known ceilings, stated rather than hidden.** Rate limits are in-process: they
+reset on restart and are not shared between replicas, so this is a
+single-container deployment until `lib/rate-limit.ts` moves to a shared store.
+CSP uses `script-src 'unsafe-inline'` because Next's App Router inlines a
+bootstrap script and the nonce alternative needs middleware, which deviation 8
+rules out — XSS defence here rests on React escaping and Zod-validated input,
+not on CSP. The v1 API remains a deliberate partial mirror of the UI (reads plus
+card writes), and the discovery document now says so instead of implying
+completeness. There is still no UI/component test coverage: all 134 tests are
+service- or route-level.
+
 ## Deviations & judgment calls (spec allows none silently — so, aloud)
 
 1. **Prisma 6, not 7.** Prisma 7 removed `url = env(...)` from schema files in

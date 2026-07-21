@@ -133,12 +133,14 @@ export default async function CalendarPage({
                         className="w-28"
                       />
                     </div>
-                    <Button size="sm">Save</Button>
+                    <Button size="sm" aria-label={`Save era ${e.name}`}>
+                      Save
+                    </Button>
                   </form>
                   <form action={deleteEraAction}>
                     <input type="hidden" name="seriesId" value={seriesId} />
                     <input type="hidden" name="eraId" value={e.id} />
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" aria-label={`Delete era ${e.name}`}>
                       Delete
                     </Button>
                   </form>
@@ -195,12 +197,14 @@ export default async function CalendarPage({
                         className="w-20"
                       />
                     </div>
-                    <Button size="sm">Save</Button>
+                    <Button size="sm" aria-label={`Save month ${m.name}`}>
+                      Save
+                    </Button>
                   </form>
                   <form action={deleteMonthAction}>
                     <input type="hidden" name="seriesId" value={seriesId} />
                     <input type="hidden" name="monthId" value={m.id} />
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" aria-label={`Delete month ${m.name}`}>
                       Delete
                     </Button>
                   </form>

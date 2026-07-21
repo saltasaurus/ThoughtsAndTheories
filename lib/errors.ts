@@ -32,3 +32,9 @@ export class ConflictError extends AppError {
     super(message, 409);
   }
 }
+
+export class TooManyRequestsError extends AppError {
+  constructor(readonly retryAfterSeconds: number) {
+    super(`Too many attempts. Try again in ${retryAfterSeconds}s.`, 429);
+  }
+}
