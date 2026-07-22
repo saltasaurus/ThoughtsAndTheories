@@ -1,0 +1,4 @@
+# Keeps public/ in the repo so the Dockerfile's `COPY /app/public` always
+# resolves. Without it the image build fails when the directory is empty, and
+# deleting that COPY instead would mean the first asset added here works in dev
+# and silently 404s in production.

@@ -8,6 +8,16 @@ import "./globals.css";
 const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
+/**
+ * Nothing here is statically cacheable: every page is per-viewer, gated by the
+ * reader's reveal position, and even /login queries the DB (isBootstrap). Next
+ * infers dynamic rendering from cookies()/headers()/searchParams, so a page
+ * that only calls a DB-backed helper looks static and gets prerendered at build
+ * time — which fails in Docker, where no database is reachable. Applied at the
+ * root so child segments inherit it rather than each remembering.
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "TheoryTracker",
   description: "A spoiler-safe worldbuilding wiki for book clubs",

@@ -1,0 +1,12 @@
+# Secrets must never enter the build context. Without this, `COPY . .` bakes the
+# dev .env — DATABASE_URL and the session-signing AUTH_SECRET — into an image
+# layer, where it survives in the published image and in `docker history`.
+.env*
+
+# Rebuilt inside the image; copying host copies is slower and can be wrong
+# (node_modules built for Windows, .next from a dev server).
+node_modules
+.next
+
+.git
+*.tsbuildinfo
