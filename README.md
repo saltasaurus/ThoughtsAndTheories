@@ -1,5 +1,7 @@
 # TheoryTracker
 
+[![CI](https://github.com/saltasaurus/ThoughtsAndTheories/actions/workflows/ci.yml/badge.svg)](https://github.com/saltasaurus/ThoughtsAndTheories/actions/workflows/ci.yml)
+
 A self-hosted, spoiler-free wiki and knowledge graph for book clubs. Members
 build a shared reference for the series they're reading — characters, locations,
 events, theories, relationships — and the app **mechanically guarantees** that
