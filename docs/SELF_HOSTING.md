@@ -20,7 +20,7 @@ guard — Next redacts the real message in production.
    the VPS.
 3. **Clone & configure**:
    ```bash
-   git clone https://github.com/saltasaurus/theorytracker.git && cd theorytracker
+   git clone https://github.com/saltasaurus/ThoughtsAndTheories.git && cd ThoughtsAndTheories
    cp .env.example .env
    # edit .env:
    #   AUTH_SECRET=<paste the generated value>

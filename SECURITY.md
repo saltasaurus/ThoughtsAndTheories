@@ -11,7 +11,7 @@ security bug, not just a spoiler. Please report it privately.
 itself a working exploit against every deployed instance.
 
 Use GitHub's **private vulnerability reporting**:
-[Report a vulnerability](https://github.com/saltasaurus/theorytracker/security/advisories/new).
+[Report a vulnerability](https://github.com/saltasaurus/ThoughtsAndTheories/security/advisories/new).
 
 Please include the version or commit, the deployment method, and the smallest
 steps that reproduce it.

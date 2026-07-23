@@ -14,9 +14,9 @@
   "keywords": ["nextjs", "prisma", "postgres", "self-hosted", "book-club", "spoiler-free", "typescript"],
   "author": "Shaun Jullens <shaunjullens@gmail.com>",
   "license": "AGPL-3.0-only",
-  "repository": { "type": "git", "url": "git+https://github.com/saltasaurus/theorytracker.git" },
-  "homepage": "https://github.com/saltasaurus/theorytracker#readme",
-  "bugs": "https://github.com/saltasaurus/theorytracker/issues",
+  "repository": { "type": "git", "url": "git+https://github.com/saltasaurus/ThoughtsAndTheories.git" },
+  "homepage": "https://github.com/saltasaurus/ThoughtsAndTheories#readme",
+  "bugs": "https://github.com/saltasaurus/ThoughtsAndTheories/issues",
   "engines": { "node": ">=24" },
   "type": "commonjs",
   "dependencies": {
