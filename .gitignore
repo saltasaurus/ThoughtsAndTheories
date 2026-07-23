@@ -4,3 +4,15 @@ node_modules/
 !.env.example
 *.tsbuildinfo
 next-env.d.ts
+
+# Agent/editor local state — may contain absolute paths and permission grants
+.claude/
+.vscode/
+.idea/
+.DS_Store
+coverage/
+*.log
+
+# Release scaffolding: an inventory of pre-fix weaknesses. Never commit; rm when done.
+Github_Public_Plan.md
+PHASE*_PLAN.md
