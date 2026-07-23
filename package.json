@@ -20,7 +20,7 @@
   "engines": { "node": ">=24" },
   "type": "commonjs",
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "^7.9.0",
     "@tiptap/pm": "^3.28.0",
     "@tiptap/react": "^3.28.0",
     "@tiptap/starter-kit": "^3.28.0",
