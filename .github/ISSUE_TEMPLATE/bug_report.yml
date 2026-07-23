@@ -1,0 +1,50 @@
+name: Bug report
+description: Something is broken (but NOT a gate bypass or security issue)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **A spoiler-gate bypass or any security issue?** Do not file it here —
+        report it privately via [SECURITY.md](../../security/policy).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: Deployment method
+      options:
+        - Local dev (npm run dev)
+        - Docker Compose + Caddy (VPS)
+        - Home server (Cloudflare Tunnel / Tailscale)
+        - Vercel + managed Postgres
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release tag (e.g. v1.0.0) or `git rev-parse --short HEAD`.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server logs or console output, if any. Redact secrets.
+      render: shell
