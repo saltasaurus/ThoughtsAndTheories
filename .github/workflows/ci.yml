@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # The test suite's global-setup connects to localhost:5432 and creates
+    # theorytracker_test over this admin DB — no explicit CREATE DATABASE step.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: theorytracker
+          POSTGRES_PASSWORD: theorytracker
+          POSTGRES_DB: theorytracker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U theorytracker"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # @prisma/client types are generated; tsc fails before it starts without this.
+      - run: npx prisma generate
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # No AUTH_SECRET here on purpose: 3.4 requires `next build` to run with no
+      # secrets, so CI enforces it on every PR — the constraint's only automated check.
+      - run: npm run build
+
+      # The step that catches defects a green suite and a clean build both miss,
+      # because the image had never been built.
+      - run: docker build .
