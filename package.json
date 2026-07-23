@@ -1,19 +1,23 @@
 {
   "name": "theorytracker",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Self-hosted, spoiler-free wiki and knowledge graph for book clubs: every card, field and relation is gated behind each member's reading position by a single mechanical rule.",
   "scripts": {
     "test": "vitest run",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["nextjs", "prisma", "postgres", "self-hosted", "book-club", "spoiler-free", "typescript"],
+  "author": "Shaun Jullens <shaunjullens@gmail.com>",
+  "license": "AGPL-3.0-only",
+  "repository": { "type": "git", "url": "git+https://github.com/saltasaurus/theorytracker.git" },
+  "homepage": "https://github.com/saltasaurus/theorytracker#readme",
+  "bugs": "https://github.com/saltasaurus/theorytracker/issues",
+  "engines": { "node": ">=24" },
   "type": "commonjs",
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -47,12 +51,5 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
-  },
-  "allowScripts": {
-    "@prisma/client@6.19.3": true,
-    "@prisma/engines@6.19.3": true,
-    "esbuild@0.28.1": true,
-    "prisma@6.19.3": true,
-    "sharp@0.34.5": true
   }
 }
