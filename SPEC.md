@@ -495,4 +495,32 @@ and asserts their API payloads differ correctly.
   Tiptap API, use the most conservative documented approach.
 - Do not use `dangerouslySetInnerHTML` on user content; render Tiptap JSON.
 - Ask no clarifying questions. Where genuinely ambiguous, choose the option
-  that better protects the invariant, and note the choice in PHASES.md.
+  that better protects the invariant, and record the choice below.
+
+# DEVIATIONS FROM THIS SPEC
+
+This spec is the design intent; the shipped app differs in a few deliberate,
+material ways. Read these before assuming a feature described above exists.
+
+1. **The roster shows no per-member "behind / at goal / ahead" badge.** The spec
+   asks for one. Shipping it alongside an EDITOR-settable session goal makes any
+   member's exact position binary-searchable by repeated observation — a
+   per-name comparison against a threshold the observer controls is searchable
+   at any granularity, which the spec itself forbids ("never a name paired with
+   a position"). Freely retargetable goals are the more useful capability, so the
+   badge is dropped; pacing is reported in aggregate (`getRosterAnalytics` counts
+   behind/at-goal/ahead, naming nobody) and `listMembers` returns identity and
+   role only.
+2. **No middleware.** Auth is enforced server-side per page/action through
+   `requireUser` / `getRequestViewer` (`lib/auth-helpers.ts`), not Next
+   middleware — which would drag Prisma into the edge runtime. A consequence:
+   the CSP keeps `script-src 'unsafe-inline'` (the nonce alternative needs
+   middleware), so XSS defence rests on React escaping and Zod-validated input,
+   not CSP.
+3. **Prisma 6, not 7.** Prisma 7 removed `url = env(...)` from schema files in
+   favour of driver adapters; the spec mandates the conservative documented path,
+   which is Prisma 6.
+4. **Search covers card titles and summaries only.** Field values, relation notes
+   and rich-text bodies are not indexed — per-field gating can't be reconciled
+   with per-row search vectors without leaking that a term exists in a gated
+   field.
