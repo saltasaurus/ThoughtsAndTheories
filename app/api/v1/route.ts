@@ -1,11 +1,16 @@
 import { json } from "@/lib/api";
-import { LIMITS } from "@/lib/rate-limit";
+import { LIMITS, clientIpFrom, rateLimit } from "@/lib/rate-limit";
 
 /**
  * Unauthenticated discovery document. Deliberately lists only route shapes —
  * no series ids, no titles — so it discloses nothing about this instance.
+ *
+ * Every other v1 route inherits throttle() via getApiContext; this bare GET
+ * never calls it, so it must rate-limit itself or it is the one unmetered,
+ * no-store, unauthenticated route on every public instance.
  */
-export function GET() {
+export function GET(request: Request) {
+  rateLimit(`api:ip:${clientIpFrom(request)}`, LIMITS.api.limit, LIMITS.api.windowMs);
   return json({
     version: "v1",
     auth: "Authorization: Bearer <token> — create one in a series' settings page",

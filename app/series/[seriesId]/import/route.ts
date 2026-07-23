@@ -3,6 +3,8 @@ import { errorResponse } from "@/lib/api";
 import { getRequestViewer } from "@/lib/auth-helpers";
 import { AppError } from "@/lib/errors";
 import { requireOwner } from "@/lib/permissions";
+import { withinImportLimit } from "@/lib/import-limit";
+import { LIMITS, clientIpFrom, rateLimit } from "@/lib/rate-limit";
 import { importSeries, parseSeriesExport } from "@/lib/services/export-import";
 
 /**
@@ -25,6 +27,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ ser
   try {
     const viewer = await getRequestViewer(seriesId);
     requireOwner(viewer.role);
+
+    rateLimit(`import:ip:${clientIpFrom(request)}`, LIMITS.import.limit, LIMITS.import.windowMs);
+
+    // Reject BEFORE formData() buffers the whole body into memory.
+    if (!withinImportLimit(request.headers.get("content-length"))) {
+      throw new AppError("Import file too large or missing a Content-Length header (25 MB max)");
+    }
 
     const form = await request.formData();
     const file = form.get("file");

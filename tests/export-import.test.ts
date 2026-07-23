@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { withinImportLimit } from "@/lib/import-limit";
 import { prisma } from "@/lib/db";
 import { AppError, ForbiddenError } from "@/lib/errors";
 import { createCard } from "@/lib/services/cards";
@@ -175,6 +176,21 @@ describe("export/import — round trip", () => {
     expect(raw).not.toContain("absoluteSortKey");
     expect(raw).not.toContain("revealIndex");
     expect(file.sections.every((s) => !("position" in s))).toBe(true);
+  });
+});
+
+describe("import — size guard (0.3a)", () => {
+  it("rejects an oversized declared body", () => {
+    expect(withinImportLimit(String(26 * 1024 * 1024))).toBe(false);
+  });
+  it("rejects a missing or unparseable Content-Length (deny by default)", () => {
+    expect(withinImportLimit(null)).toBe(false);
+    expect(withinImportLimit("")).toBe(false);
+    expect(withinImportLimit("not-a-number")).toBe(false);
+    expect(withinImportLimit("0")).toBe(false);
+  });
+  it("accepts a reasonable declared body", () => {
+    expect(withinImportLimit(String(1024))).toBe(true);
   });
 });
 

@@ -7,10 +7,12 @@ services:
       POSTGRES_PASSWORD: theorytracker
       POSTGRES_DB: theorytracker
     ports:
-      - "5432:5432"
+      # Loopback-only. Published ports insert NAT rules AHEAD of the host INPUT
+      # chain, so `ufw deny 5432` never blocked a 0.0.0.0 bind. This is the
+      # security boundary, not the password.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U theorytracker"]
       interval: 5s
@@ -25,6 +27,10 @@ services:
     command: npx prisma migrate deploy
     environment:
       DATABASE_URL: postgresql://theorytracker:theorytracker@db:5432/theorytracker
+      # Runtime-only (blast radius: this service). Lets `prisma db seed` run here
+      # refuse the demo seed in prod — the migrate image builds target:build, which
+      # has no ENV NODE_ENV, so without this the seed guard would see it undefined.
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_healthy
@@ -38,8 +44,10 @@ services:
     environment:
       DATABASE_URL: postgresql://theorytracker:theorytracker@db:5432/theorytracker
       # Fail to start rather than boot with a missing session-signing key.
-      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env - generate with openssl rand -base64 32}
-      AUTH_URL: https://${DOMAIN}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env - generate with node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"}
+      # Guarded: unset DOMAIN yields https:// with no host, which boots into a
+      # broken TLS/callback state instead of failing loudly.
+      AUTH_URL: https://${DOMAIN:?set DOMAIN in .env}
     healthcheck:
       # /api/health reports only whether the DB answers — safe to expose.
       test:
@@ -62,7 +70,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data

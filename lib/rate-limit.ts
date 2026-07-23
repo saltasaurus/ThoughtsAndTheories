@@ -96,4 +96,6 @@ export const LIMITS = {
   invite: { limit: 30, windowMs: 60 * 60_000 },
   /** per IP — the REST API; each call is a DB round trip */
   api: { limit: 120, windowMs: 60_000 },
+  /** per IP — series import parses a whole JSON file into memory; keep it rare */
+  import: { limit: 10, windowMs: 60 * 60_000 },
 } as const;

@@ -32,6 +32,21 @@ type SectionDef = {
 };
 
 async function main(): Promise<void> {
+  // Demo accounts have a PUBLISHED password and make alice@example.com an OWNER —
+  // account takeover on any exposed instance. Refuse in production unless opted in.
+  // Guard shape differs from lib/auth-helpers.ts on purpose: the seed is a bare
+  // `tsx` process (Prisma injects no NODE_ENV, so a newcomer's first run is
+  // undefined, not "production"), NOT a Next server keyed on AUTH_URL. The prod
+  // signal here is the explicit NODE_ENV=production set on the compose `migrate`
+  // service. Do not "harmonize" this with the auth guard.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "yes") {
+    console.error(
+      "Refusing to seed demo accounts in production. These use a published password. " +
+        "Set ALLOW_DEMO_SEED=yes only for a throwaway evaluation instance.",
+    );
+    process.exitCode = 1;
+    return;
+  }
   if ((await prisma.series.count()) > 0) {
     console.log("Seed skipped: database already contains a series.");
     return;
