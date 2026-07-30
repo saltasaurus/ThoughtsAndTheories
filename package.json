@@ -21,7 +21,7 @@
   "type": "commonjs",
   "dependencies": {
     "@prisma/client": "^6.19.3",
-    "@tiptap/pm": "^3.28.0",
+    "@tiptap/pm": "^3.29.1",
     "@tiptap/react": "^3.28.0",
     "@tiptap/starter-kit": "^3.28.0",
     "bcryptjs": "^3.0.3",
